@@ -173,6 +173,32 @@ struct GoogleCalendarConnectorTests {
 
     // MARK: - fetch
 
+    @Test("a positive UTC-offset timezone percent-encodes the + in timeMin/timeMax (HTTP 400 regression)")
+    func positiveOffsetEncodesPlusSign() throws {
+        // Jakarta is +07:00. URLComponents.queryItems does NOT encode "+", and a server
+        // reads a bare "+" in a query as a space — corrupting the timestamp → HTTP 400.
+        let tz = try #require(TimeZone(identifier: "Asia/Jakarta"))
+        let timeMin = try #require(RFC3339.date(from: "2026-06-18T00:00:00+07:00"))
+        let timeMax = try #require(RFC3339.date(from: "2026-06-19T23:59:59+07:00"))
+
+        let request = GoogleCalendarConnector.makeEventsRequest(
+            calendarId: "primary", token: "t", timeMin: timeMin, timeMax: timeMax, timeZone: tz
+        )
+        let url = try #require(request.url)
+        let comps = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false))
+
+        // The RAW query must escape "+" as %2B and never carry a bare "+" in the timestamp.
+        let rawQuery = try #require(comps.percentEncodedQuery)
+        #expect(rawQuery.contains("%2B07:00"))
+        #expect(!rawQuery.contains("00+07:00"))
+        // …and it still decodes back to the correct offset.
+        let decoded = Dictionary(
+            (comps.queryItems ?? []).map { ($0.name, $0.value ?? "") },
+            uniquingKeysWith: { first, _ in first }
+        )
+        #expect(decoded["timeMin"]?.contains("+07:00") == true)
+    }
+
     @Test("fetch issues a Bearer-authed events.list request with the documented query")
     func fetchBuildsExpectedRequest() async throws {
         let transport = MockHTTPTransport()

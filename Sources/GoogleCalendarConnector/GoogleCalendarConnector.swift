@@ -162,15 +162,24 @@ public struct GoogleCalendarConnector: Connector {
         let encodedCalendar = calendarId
             .addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? calendarId
         components.path = "/calendar/v3/calendars/\(encodedCalendar)/events"
-        components.queryItems = [
+        // Percent-encode the values OURSELVES (via `percentEncodedQueryItems`), because
+        // `URLComponents.queryItems` does NOT encode "+". The RFC3339 timezone offset for
+        // a positive zone (e.g. "+07:00") would then be sent literally, and a server
+        // decodes "+" in a query as a space → "2026-06-18T00:00:00 07:00" → HTTP 400.
+        // Escaping "+" to "%2B" makes Google receive the correct timestamp.
+        let valueAllowed = CharacterSet.urlQueryAllowed.subtracting(CharacterSet(charactersIn: "+"))
+        func encoded(_ value: String) -> String {
+            value.addingPercentEncoding(withAllowedCharacters: valueAllowed) ?? value
+        }
+        components.percentEncodedQueryItems = [
             URLQueryItem(name: "singleEvents", value: "true"),
             URLQueryItem(name: "orderBy", value: "startTime"),
-            URLQueryItem(name: "timeMin", value: RFC3339.string(from: timeMin, timeZone: timeZone)),
-            URLQueryItem(name: "timeMax", value: RFC3339.string(from: timeMax, timeZone: timeZone)),
+            URLQueryItem(name: "timeMin", value: encoded(RFC3339.string(from: timeMin, timeZone: timeZone))),
+            URLQueryItem(name: "timeMax", value: encoded(RFC3339.string(from: timeMax, timeZone: timeZone))),
             URLQueryItem(name: "maxResults", value: "250"),
             // No `fields` projection: it's only a payload optimization, and a malformed
-            // field mask is a common cause of HTTP 400 from events.list. The normalizer
-            // reads only the fields it needs from the full response.
+            // field mask is another common cause of HTTP 400 from events.list. The
+            // normalizer reads only the fields it needs from the full response.
         ]
 
         // URLComponents builds a safe absolute URL from validated parts.
