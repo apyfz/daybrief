@@ -178,12 +178,15 @@ private struct ConnectionRow: View {
 
 // MARK: - Model
 
-/// Provider + model picker. Refreshes the model list when the provider changes.
+/// Provider + API key + model picker. Lets you (re-)enter the AI key and load models
+/// without re-running onboarding.
 private struct ModelSection: View {
     @Bindable var model: AppModel
 
     @State private var models: [ModelInfo] = []
+    @State private var apiKey = ""
     @State private var isLoading = false
+    @State private var savedNote: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -197,10 +200,18 @@ private struct ModelSection: View {
                 .frame(maxWidth: 200)
             }
 
+            if model.selectedProvider.requiresAPIKey {
+                LabeledRow(label: "API key") {
+                    SecureField("Paste a new key (blank keeps current)", text: $apiKey)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: 260)
+                }
+            }
+
             LabeledRow(label: "Model") {
                 HStack(spacing: 8) {
                     if models.isEmpty {
-                        Text(model.selectedModel.isEmpty ? "Load to choose" : model.selectedModel)
+                        Text(model.selectedModel.isEmpty ? "Save & load to choose" : model.selectedModel)
                             .font(.system(size: 13))
                             .foregroundStyle(DaybriefTheme.inkSecondary)
                             .lineLimit(1)
@@ -212,22 +223,46 @@ private struct ModelSection: View {
                         }
                         .labelsHidden()
                         .frame(maxWidth: 260)
+                        .onChange(of: model.selectedModel) { _, _ in
+                            Task { await model.persistSelectedModel() }
+                        }
                     }
-                    DBSecondaryButton(isLoading ? "Loading…" : "Refresh", systemImage: "arrow.clockwise") {
-                        Task { await refresh() }
+                    DBSecondaryButton(isLoading ? "Loading…" : "Save & load", systemImage: "arrow.clockwise") {
+                        Task { await saveAndLoad() }
                     }
                     .disabled(isLoading)
                 }
             }
+
+            if let savedNote {
+                Text(savedNote)
+                    .font(.system(size: 11))
+                    .foregroundStyle(DaybriefTheme.inkSecondary)
+            }
+            if let error = model.lastError {
+                Text(error)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
-    private func refresh() async {
+    /// Saves a freshly-pasted key (if any), then loads the provider's models. Clears
+    /// the field after saving so the key isn't left on screen.
+    private func saveAndLoad() async {
         isLoading = true
         defer { isLoading = false }
+        let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !key.isEmpty {
+            await model.saveAPIKey(key, provider: model.selectedProvider, baseURL: nil)
+            apiKey = ""
+            savedNote = model.lastError == nil ? "Key saved to your Keychain." : nil
+        }
         models = await model.availableModels()
         if model.selectedModel.isEmpty, let first = models.first {
             model.selectedModel = first.id
+            await model.persistSelectedModel()
         }
     }
 
