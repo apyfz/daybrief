@@ -53,6 +53,48 @@ struct BriefEmptyStateView: View {
     }
 }
 
+/// The first-run welcome: shown when setup isn't complete (no AI model yet) and no
+/// brief exists. Invites the reader into onboarding instead of failing into an
+/// error — you can't synthesize an edition without a model.
+struct BriefWelcomeStateView: View {
+    /// Opens the setup / onboarding window.
+    let onGetStarted: () -> Void
+
+    var body: some View {
+        VStack(spacing: 18) {
+            Image(systemName: "sun.horizon")
+                .font(.system(size: 38, weight: .light))
+                .foregroundStyle(DaybriefTheme.accent)
+                .accessibilityHidden(true)
+
+            VStack(spacing: 6) {
+                Text("Welcome to Daybrief")
+                    .font(DaybriefTheme.serifDisplay(24))
+                    .foregroundStyle(DaybriefTheme.ink)
+                Text("Add an AI model and connect your tools, and each morning we'll read through your day and set the page.")
+                    .font(DaybriefTheme.serifBody(13).italic())
+                    .foregroundStyle(DaybriefTheme.inkSecondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: 280)
+            }
+
+            Button(action: onGetStarted) {
+                Text("Get started")
+                    .font(DaybriefTheme.serifBody(14))
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 10)
+                    .background(Capsule().fill(DaybriefTheme.accent))
+                    .foregroundStyle(DaybriefTheme.ink)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Get started")
+        }
+        .padding(.vertical, 52)
+        .frame(maxWidth: .infinity)
+    }
+}
+
 /// The loading state shown while the first edition is being assembled, when there
 /// is no prior brief to keep on screen. Quietly literary rather than a spinner-only.
 struct BriefLoadingStateView: View {

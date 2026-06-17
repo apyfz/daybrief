@@ -14,9 +14,17 @@ import SwiftUI
 @MainActor
 public struct BriefPanelView: View {
     @State private var model: AppModel
+    @Environment(\.openWindow) private var openWindow
 
     public init(model: AppModel) {
         self.model = model
+    }
+
+    /// Opens the setup / onboarding / settings window and brings the app forward
+    /// (the window scene promotes the app to a regular, focusable app on appear).
+    private func openSetup() {
+        openWindow(id: DaybriefWindow.mainID)
+        NSApp.activate()
     }
 
     /// The fixed panel width — a single column, like a printed page.
@@ -73,6 +81,18 @@ public struct BriefPanelView: View {
                 .disabled(model.isGenerating)
                 .accessibilityLabel("Refresh today's brief")
             }
+
+            Button {
+                openSetup()
+            } label: {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(DaybriefTheme.inkSecondary)
+                    .frame(width: 22, height: 22)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Settings")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
@@ -93,6 +113,10 @@ public struct BriefPanelView: View {
             edition(for: brief)
         } else if model.isGenerating {
             BriefLoadingStateView()
+        } else if model.setup != .ready {
+            // Fresh / incomplete setup with no brief yet → invite onboarding rather
+            // than showing a brief error (you can't synthesize without a model).
+            BriefWelcomeStateView(onGetStarted: { openSetup() })
         } else if let error = model.lastError {
             BriefErrorStateView(
                 message: error,

@@ -245,8 +245,17 @@ public final class AppModel {
         space: String
     ) async {
         lastError = nil
+        let config = AppEnvironment.googleOAuthConfig(clientID: clientID, clientSecret: clientSecret)
+        await connectGoogle(id, config: config, space: space)
+    }
+
+    /// Shared Google loopback-OAuth body for both the manual entry path
+    /// (``beginConnectGoogle(_:clientID:clientSecret:space:)``) and the client-reuse
+    /// path (``beginConnectGoogleReusingExistingClient(_:space:)``): runs the loopback
+    /// flow with `config`, persists the resulting token + refresh parameters, and
+    /// records the account under `space`.
+    private func connectGoogle(_ id: ConnectorID, config: OAuthConfig, space: String) async {
         do {
-            let config = AppEnvironment.googleOAuthConfig(clientID: clientID, clientSecret: clientSecret)
             let presenter = WebAuthPresenter()
             let token = try await environment.oauthFlow.authorizeViaLoopback(
                 config: config,
@@ -273,11 +282,57 @@ public final class AppModel {
         } catch let error as ConnectorError {
             if case .userCancelled = error { return }
             lastError = error.displayMessage
-            Self.logger.error("beginConnectGoogle failed: \(error.displayMessage, privacy: .public)")
+            Self.logger.error("connectGoogle failed: \(error.displayMessage, privacy: .public)")
         } catch {
             lastError = "Could not connect Google."
-            Self.logger.error("beginConnectGoogle failed: \(error.localizedDescription, privacy: .public)")
+            Self.logger.error("connectGoogle failed: \(error.localizedDescription, privacy: .public)")
         }
+    }
+
+    /// Whether the user has already set up a Google Desktop OAuth client for one of
+    /// the Google connectors (Calendar or Gmail), with its refresh parameters still
+    /// resolvable from the Keychain.
+    ///
+    /// The onboarding Google screens use this to offer "Use the same Google client
+    /// you already set up" once either connector is connected — Calendar and Gmail
+    /// share a single Desktop client, so the second connector never needs the id /
+    /// secret re-entered.
+    public func hasExistingGoogleClient() async -> Bool {
+        await existingGoogleOAuthConfig() != nil
+    }
+
+    /// Connects `id` (Calendar or Gmail) by **reusing** the Google Desktop OAuth
+    /// client the user already set up for the other Google connector — no client id /
+    /// secret re-entry.
+    ///
+    /// Loads the ``StoredOAuthClient`` from an existing Google account's derived
+    /// client ref in the Keychain, then runs the same loopback flow as
+    /// ``beginConnectGoogle(_:clientID:clientSecret:space:)``. If no existing client
+    /// is found (the caller should have gated on ``hasExistingGoogleClient()``), it
+    /// surfaces a message and does nothing — the caller falls back to manual entry.
+    public func beginConnectGoogleReusingExistingClient(_ id: ConnectorID, space: String) async {
+        lastError = nil
+        guard let config = await existingGoogleOAuthConfig() else {
+            lastError = "No existing Google client to reuse — enter your client ID and secret."
+            return
+        }
+        await connectGoogle(id, config: config, space: space)
+    }
+
+    /// Loads the OAuth config from an already-connected Google account's stored client
+    /// parameters, or `nil` if neither Calendar nor Gmail has a resolvable client.
+    private func existingGoogleOAuthConfig() async -> OAuthConfig? {
+        let googleAccounts = connections
+            .filter { $0.connectorId == .gcal || $0.connectorId == .gmail }
+            .flatMap(\.accounts)
+        for account in googleAccounts {
+            let tokenRef = AccountSecrets.tokenRef(for: account.id, connector: account.connectorId)
+            let clientRef = AccountSecrets.clientRef(for: tokenRef)
+            if let stored = try? await environment.keychain.getCodable(StoredOAuthClient.self, for: clientRef) {
+                return stored.config
+            }
+        }
+        return nil
     }
 
     /// Connects Slack from a pasted `xoxp-` user token, storing it in the Keychain
@@ -409,6 +464,9 @@ public final class AppModel {
     /// backs off until tomorrow. The manual ``generateBriefNow()`` path does not
     /// route through here, so the user can always retry by hand.
     public func onWakeOrLaunch() async {
+        // Don't auto-generate until setup is complete: a fresh launch with no
+        // configured model must land in onboarding, not "fail" into an error state.
+        guard setup == .ready else { return }
         let scheduler = BriefScheduler(fireTime: briefTime)
         let lastSuccess = (try? await environment.settings.date(forKey: SettingsStore.lastBriefDateKey)) ?? nil
         let lastAttempt = (try? await environment.settings.date(forKey: SettingsStore.lastBriefAttemptDateKey)) ?? nil

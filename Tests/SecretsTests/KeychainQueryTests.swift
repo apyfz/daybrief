@@ -9,15 +9,18 @@ import Testing
 struct KeychainQueryTests {
     private let ref = SecretRef(service: "co.daybrief.test.service", account: "alice@example.com")
 
-    @Test("every query targets the data-protection keychain")
-    func everyQueryUsesDataProtectionKeychain() {
+    @Test("every query targets the login keychain (no data-protection flag)")
+    func everyQueryUsesLoginKeychain() {
+        // Daybrief is unsandboxed Developer-ID, so it uses the file-based login
+        // keychain: the data-protection flag must be ABSENT (setting it fails with
+        // errSecMissingEntitlement on a build without a keychain access group).
         let queries: [[CFString: Any]] = [
             KeychainQuery.base(for: ref),
             KeychainQuery.add(ref, data: Data([0x01])),
             KeychainQuery.copy(ref),
         ]
         for query in queries {
-            #expect(query[kSecUseDataProtectionKeychain] as? Bool == true)
+            #expect(query[kSecUseDataProtectionKeychain] == nil)
         }
     }
 
@@ -35,12 +38,13 @@ struct KeychainQueryTests {
         #expect(query[kSecAttrAccessible] == nil)
     }
 
-    @Test("add query carries the value and the after-first-unlock-this-device-only class")
-    func addQueryCarriesValueAndAccessibility() {
+    @Test("add query carries the value (login keychain: no accessibility attribute)")
+    func addQueryCarriesValue() {
         let data = Data([0xDE, 0xAD, 0xBE, 0xEF])
         let query = KeychainQuery.add(ref, data: data)
         #expect(query[kSecValueData] as? Data == data)
-        #expect(query[kSecAttrAccessible] as? String == kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String)
+        // The login keychain doesn't honor kSecAttrAccessible — it must be absent.
+        #expect(query[kSecAttrAccessible] == nil)
         // Add still includes the full primary key.
         #expect(query[kSecAttrService] as? String == ref.service)
         #expect(query[kSecAttrAccount] as? String == ref.account)

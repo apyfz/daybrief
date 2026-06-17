@@ -75,8 +75,8 @@ struct DaybriefApp: App {
         }
     }
 
-    /// The id of the standalone setup/settings window.
-    static let mainWindowID = "daybrief-main"
+    /// The id of the standalone setup/settings window (shared with `AppFeature`).
+    static let mainWindowID = DaybriefWindow.mainID
 }
 
 /// A calm fallback shown when the app environment failed to build, so a launch
