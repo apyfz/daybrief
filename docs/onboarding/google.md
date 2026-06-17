@@ -43,34 +43,28 @@ You only do this once. The same client works for both Calendar and Gmail.
 Enable both even if you only plan to connect one of them now — it saves a trip
 back later.
 
-## 3. Configure the OAuth consent screen
+## 3. Configure the Google Auth Platform (consent screen)
 
-This is the screen Google shows you when you grant Daybrief access. Because you
-are the only user of your own client, you do not need Google to review it.
+Google moved OAuth setup into the **Google Auth Platform**. Open it at
+<https://console.cloud.google.com/auth/overview> (Menu → **Google Auth
+Platform**; the old "OAuth consent screen" link redirects here). Because you are
+the only user of your own client, you do not need Google to review it.
 
-1. Open **APIs & Services → OAuth consent screen**:
-   <https://console.cloud.google.com/apis/credentials/consent>.
-2. Choose user type:
-   - **External** for a personal `@gmail.com` account.
-   - **Internal** if you are on a Google Workspace and only your organization
-     will use it (Workspace accounts only).
-3. Fill in the required fields:
-   - **App name:** `Daybrief` (or anything you like — only you will see it).
-   - **User support email:** your email.
-   - **Developer contact email:** your email.
-4. Save and continue through the **Scopes** step — you do **not** need to add
-   scopes here; Daybrief requests them at sign-in time.
-5. On the **Test users** step (External apps), you may add your own email, but
-   the next step makes test users unnecessary.
+1. If the page says **"Google Auth Platform not configured yet,"** click
+   **Get started**.
+2. **App Information:** enter an app name (`Daybrief`, or anything — only you see
+   it) and your **User support email**, then **Next**.
+3. **Audience:** choose **External** for a personal `@gmail.com` account, or
+   **Internal** if you're on a Google Workspace and only your org will use it.
+   Click **Next**.
+4. **Contact Information:** enter your email, then **Next**.
+5. Agree to the policy and click **Create**.
 
-### Set it to "In production"
+### Set it to "In production" — the most important step
 
-This is the most important step.
-
-1. Back on the **OAuth consent screen** overview, find the **Publishing status**
-   section.
-2. If it says **Testing**, click **Publish app** and confirm to move it to
-   **In production**.
+1. In the Google Auth Platform left nav, open **Audience**.
+2. Under **Publishing status**, if it says **Testing**, click **Publish app**
+   and confirm to move it to **In production**.
 
 > **Why this matters — the 7-day refresh-token expiry.** While an OAuth app is
 > in **Testing** status, Google expires its refresh tokens after **7 days**.
@@ -84,11 +78,18 @@ This is the most important step.
 > unverified — you may see an "unverified app" warning the first time you sign
 > in, which you can safely proceed past (it is your own app).
 
+### Add the scopes
+
+1. In the Google Auth Platform left nav, open **Data Access**.
+2. Click **Add or remove scopes** and add the read-only scopes you need:
+   `calendar.readonly` and `calendar.calendarlist.readonly` for Calendar, and/or
+   `gmail.readonly` for Gmail. **Update**, then **Save**.
+
 ## 4. Create a Desktop OAuth client
 
-1. Open **APIs & Services → Credentials**:
-   <https://console.cloud.google.com/apis/credentials>.
-2. Click **Create Credentials → OAuth client ID**.
+1. In the Google Auth Platform left nav, open **Clients**:
+   <https://console.cloud.google.com/auth/clients>.
+2. Click **Create client**.
 3. For **Application type**, choose **Desktop app**. This is required — Daybrief
    uses a local loopback (`127.0.0.1`) redirect, which only the Desktop app
    client type supports. Do **not** pick "Web application" or any other type.

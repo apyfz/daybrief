@@ -163,6 +163,8 @@ struct GoogleConnectorScreen: View {
     @State private var canReuseExistingClient = false
 
     private static let consoleURL = URL(string: "https://console.cloud.google.com")!
+    private static let authPlatformURL = URL(string: "https://console.cloud.google.com/auth/overview")!
+    private static let clientsURL = URL(string: "https://console.cloud.google.com/auth/clients")!
 
     var body: some View {
         ConnectorDetailScaffold(onClose: onClose, lastError: model.lastError) {
@@ -259,26 +261,29 @@ struct GoogleConnectorScreen: View {
     }
 
     private var steps: [DBStep] {
-        var list: [DBStep] = [
+        let api = connectorID == .gcal ? "Google Calendar API" : "Gmail API"
+        let scope = connectorID == .gcal ? "calendar.readonly" : "gmail.readonly"
+        return [
             DBStep(
                 "Open the Google Cloud Console and create a project (or pick an existing one).",
                 link: ("Open the Google Cloud Console", Self.consoleURL)
             ),
-        ]
-        if connectorID == .gcal {
-            list.append(DBStep("Under APIs & Services → Library, enable the Google Calendar API."))
-        } else {
-            list.append(DBStep("Under APIs & Services → Library, enable the Gmail API."))
-        }
-        list.append(contentsOf: [
+            DBStep("In APIs & Services → Library, search for and enable the \(api)."),
             DBStep(
-                "On the OAuth consent screen, choose External, fill the required fields, then Publish app so its status reads “In production.” This is what stops Google expiring your access every 7 days.",
+                "Open Google Auth Platform and click Get started. Set the app name and your support email (Branding), choose Audience “External,” add your contact email, and finish.",
+                link: ("Open Google Auth Platform", Self.authPlatformURL)
+            ),
+            DBStep(
+                "In Google Auth Platform → Audience, click Publish app so the status reads “In production.” While it stays “Testing,” Google expires your sign-in every 7 days.",
                 emphasized: true
             ),
-            DBStep("Under Credentials → Create credentials → OAuth client ID, choose application type Desktop app and create it. The loopback sign-in only works with the Desktop type."),
-            DBStep("Copy the client ID and client secret from the dialog and paste them below."),
-        ])
-        return list
+            DBStep("In Google Auth Platform → Data Access, click Add or remove scopes and add \(scope)."),
+            DBStep(
+                "In Google Auth Platform → Clients, click Create client, choose application type Desktop app, and create it. The loopback sign-in only works with the Desktop type.",
+                link: ("Open Clients", Self.clientsURL)
+            ),
+            DBStep("Copy the Client ID and Client secret from the client you just created and paste them below."),
+        ]
     }
 
     private var scopeRows: [(scope: String, why: String)] {
