@@ -166,15 +166,29 @@ public struct HeroArtworkView: View {
         self.hero = hero
     }
 
+    /// A calm default painting shown when an edition has no (resolvable) hero — so the
+    /// plate always carries real art rather than a placeholder. (An older brief saved
+    /// before tone-matched art, or a renamed asset, would otherwise have no image.)
+    private static let defaultArtworkName = "pissarro-tuileries-winter"
+
     public var body: some View {
-        if let hero, let image = bundledImage(named: hero.assetName) {
+        if let image = resolvedImage {
             image
                 .resizable()
                 .aspectRatio(contentMode: .fill)
-                .accessibilityLabel(hero.creditLine)
+                .accessibilityLabel(hero?.creditLine ?? "Edition artwork")
         } else {
             placeholder
         }
+    }
+
+    /// The edition's painting if it resolves, otherwise a calm bundled default — so
+    /// the hero never renders as a broken image.
+    private var resolvedImage: Image? {
+        if let hero, let image = bundledImage(named: hero.assetName) {
+            return image
+        }
+        return bundledImage(named: Self.defaultArtworkName)
     }
 
     /// Loads `name` from the app bundle's asset catalog, if present.
@@ -187,22 +201,26 @@ public struct HeroArtworkView: View {
         #endif
     }
 
-    /// A calm, classical-feeling gradient stand-in when no painting is bundled.
+    /// A warm, classical-feeling plate used only if even the default painting can't
+    /// be loaded — intentional and calm, never a broken-image glyph.
     private var placeholder: some View {
-        LinearGradient(
-            colors: [
-                DaybriefTheme.accent.opacity(0.45),
-                DaybriefTheme.paper,
-                DaybriefTheme.inkSecondary.opacity(0.25),
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-        .overlay(
-            Image(systemName: "photo.artframe")
-                .font(.system(size: 30, weight: .light))
-                .foregroundStyle(DaybriefTheme.ink.opacity(0.25))
-        )
+        ZStack {
+            LinearGradient(
+                colors: [
+                    DaybriefTheme.accent.opacity(0.38),
+                    DaybriefTheme.paper,
+                    DaybriefTheme.accent.opacity(0.16),
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            RadialGradient(
+                colors: [.black.opacity(0.06), .clear],
+                center: .center,
+                startRadius: 8,
+                endRadius: 260
+            )
+        }
         .accessibilityLabel("Edition artwork")
     }
 }
