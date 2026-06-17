@@ -38,6 +38,15 @@ enum OnboardingConnector: Identifiable, CaseIterable {
         case .slack: "@-mentions and DMs from the last day"
         }
     }
+
+    /// The underlying connector id this onboarding screen sets up.
+    var connectorID: ConnectorID {
+        switch self {
+        case .calendar: .gcal
+        case .gmail: .gmail
+        case .slack: .slack
+        }
+    }
 }
 
 // MARK: - Shared header

@@ -94,26 +94,63 @@ private struct SettingsSection<Content: View>: View {
 
 // MARK: - Connections
 
-/// Lists each connected account with a per-account Space picker.
+/// Shows every connector (Calendar / Gmail / Slack) with its status and a Set up /
+/// Add button that opens the dedicated setup screen — so tools skipped during
+/// onboarding can be added later — plus a per-account Space picker for connected ones.
 private struct ConnectionsSection: View {
     @Bindable var model: AppModel
+    @State private var sheet: OnboardingConnector?
 
-    private var accounts: [(connection: Connection, account: Account)] {
-        model.connections.flatMap { connection in
-            connection.accounts.map { (connection, $0) }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            ForEach(OnboardingConnector.allCases) { connector in
+                if connector != OnboardingConnector.allCases.first {
+                    Divider().overlay(DaybriefTheme.ink.opacity(0.06))
+                }
+                connectorBlock(connector)
+            }
+        }
+        .sheet(item: $sheet) { connector in
+            ConnectorDetailScreen(model: model, connector: connector, onClose: { sheet = nil })
         }
     }
 
-    var body: some View {
-        if accounts.isEmpty {
-            Text("No tools connected. Add Google or Slack from onboarding to fill your brief.")
-                .font(.system(size: 13))
-                .foregroundStyle(DaybriefTheme.inkSecondary)
-        } else {
-            ForEach(Array(accounts.enumerated()), id: \.element.account.id) { index, pair in
-                ConnectionRow(model: model, connection: pair.connection, account: pair.account)
-                if index < accounts.count - 1 {
-                    Divider().overlay(DaybriefTheme.ink.opacity(0.06))
+    @ViewBuilder
+    private func connectorBlock(_ connector: OnboardingConnector) -> some View {
+        let connection = model.connections.first { $0.connectorId == connector.connectorID }
+        let accounts = connection?.accounts ?? []
+
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                Image(systemName: connector.symbol)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(DaybriefTheme.ink)
+                    .frame(width: 28, height: 28)
+                    .background(DaybriefTheme.accent.opacity(0.3), in: RoundedRectangle(cornerRadius: 7))
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(connector.name)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(DaybriefTheme.ink)
+                    Text(accounts.isEmpty ? "Not connected" : "Connected")
+                        .font(.system(size: 11))
+                        .foregroundStyle(accounts.isEmpty ? DaybriefTheme.inkSecondary : DaybriefTheme.ink.opacity(0.7))
+                }
+                Spacer(minLength: 12)
+
+                DBSecondaryButton(
+                    accounts.isEmpty ? "Set up" : "Add or reconnect",
+                    systemImage: accounts.isEmpty ? "plus" : "arrow.clockwise"
+                ) {
+                    sheet = connector
+                }
+            }
+
+            // Per-account Space pickers for whatever's connected under this connector.
+            if let connection {
+                ForEach(accounts) { account in
+                    ConnectionRow(model: model, connection: connection, account: account)
+                        .padding(.leading, 40)
                 }
             }
         }
