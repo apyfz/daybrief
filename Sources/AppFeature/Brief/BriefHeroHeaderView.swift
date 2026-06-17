@@ -14,6 +14,8 @@ struct BriefHeroHeaderView: View {
     let dateline: String
     /// The generation time shown on the right spine, e.g. "05:32 AM".
     let generationTime: String
+    /// The edition's accent, sampled from its hero painting; defaults to the golden accent.
+    var accent: Color = DaybriefTheme.accent
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -40,7 +42,7 @@ struct BriefHeroHeaderView: View {
                         )
 
                     if !masthead.isEmpty {
-                        BriefMastheadView(masthead: masthead)
+                        BriefMastheadView(masthead: masthead, accent: accent)
                     }
                 }
 

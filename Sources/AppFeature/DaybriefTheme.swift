@@ -38,6 +38,29 @@ public enum DaybriefTheme {
     }
 }
 
+// MARK: - Hex color
+
+public extension Color {
+    /// Parses a `#RRGGBB` / `RRGGBB` hex string into a `Color`, returning `nil` for any
+    /// other length or non-hex input.
+    ///
+    /// Used for the per-edition accent sampled from each hero painting
+    /// (``DaybriefCore/HeroArtwork/accentHex``): `DaybriefCore` carries no color type, so
+    /// the curated hex travels as a string and the UI converts it here. Only the 6-digit
+    /// RGB form is accepted (an optional single leading `#`); anything else falls back to
+    /// `DaybriefTheme/accent` at the call site.
+    init?(hex: String) {
+        var s = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+        if s.hasPrefix("#") { s.removeFirst() }
+        guard s.count == 6, let value = UInt32(s, radix: 16) else { return nil }
+        self.init(
+            red: Double((value >> 16) & 0xFF) / 255.0,
+            green: Double((value >> 8) & 0xFF) / 255.0,
+            blue: Double(value & 0xFF) / 255.0
+        )
+    }
+}
+
 // MARK: - Editorial card
 
 /// The shared soft-rounded card chrome used to set a section of the brief (and the
@@ -75,10 +98,14 @@ private struct EditorialCard: ViewModifier {
 public struct ActionBadge: View {
     /// The CTA text to print on the badge (the trailing arrow is added here).
     private let label: String
+    /// The starburst fill — the edition's per-edition accent, sampled from its hero
+    /// painting; defaults to the app's golden accent.
+    private let accent: Color
 
-    /// Creates an action badge with `label`.
-    public init(label: String) {
+    /// Creates an action badge with `label`, optionally tinted by the edition `accent`.
+    public init(label: String, accent: Color = DaybriefTheme.accent) {
         self.label = label
+        self.accent = accent
     }
 
     public var body: some View {
@@ -87,7 +114,7 @@ public struct ActionBadge: View {
             .foregroundStyle(DaybriefTheme.ink)
             .padding(.horizontal, 14)
             .padding(.vertical, 9)
-            .background(StarburstShape().fill(DaybriefTheme.accent))
+            .background(StarburstShape().fill(accent))
             .rotationEffect(.degrees(-6))
             .accessibilityHidden(true)
     }

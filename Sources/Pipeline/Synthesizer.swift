@@ -61,6 +61,10 @@ public struct Synthesizer: Sendable {
     ///   - model: The provider model id to use.
     ///   - spaceFilter: The space this brief was filtered to, or `nil` for all.
     ///   - connectorErrors: Surfaced connector failures to attach to the brief.
+    ///   - signalsRead: How many normalized signals were read, for the colophon's
+    ///     provenance line (computed by the caller, defaults to `items.count`).
+    ///   - sources: The distinct connectors that contributed, for the colophon
+    ///     (computed by the caller; defaults to the distinct sources of `items`).
     /// - Returns: A fully-assembled ``DaybriefCore/Brief``.
     /// - Throws: ``PipelineError/synthesisFailed(reason:)`` if the model call
     ///   exceeds the synthesis budget, or if the call or repair layer otherwise
@@ -71,7 +75,9 @@ public struct Synthesizer: Sendable {
         adapter: any ModelAdapter,
         model: String,
         spaceFilter: String? = nil,
-        connectorErrors: [ConnectorErrorSummary] = []
+        connectorErrors: [ConnectorErrorSummary] = [],
+        signalsRead: Int? = nil,
+        sources: [ConnectorID]? = nil
     ) async throws -> Brief {
         let now = dateProvider.now()
         let weekday = Self.weekdayName(for: now, calendar: calendar)
@@ -102,13 +108,32 @@ public struct Synthesizer: Sendable {
             throw PipelineError.synthesisFailed(reason: "\(type(of: error))")
         }
 
+        // Provenance for the colophon is computed at assembly, never by the model.
+        // The caller may pass exact counts (it knows which connectors were enabled
+        // and how it normalized); otherwise derive from the items we synthesized from.
+        let resolvedSignalsRead = signalsRead ?? items.count
+        let resolvedSources = sources ?? Self.distinctSources(of: items)
+
         return mapToBrief(
             synthesized,
             generatedAt: now,
             weekday: weekday,
             spaceFilter: spaceFilter,
-            connectorErrors: connectorErrors
+            connectorErrors: connectorErrors,
+            signalsRead: resolvedSignalsRead,
+            sources: resolvedSources
         )
+    }
+
+    /// The distinct connector sources of `items`, in first-seen order (stable for the
+    /// colophon rather than `Set`-ordered).
+    static func distinctSources(of items: [BriefItem]) -> [ConnectorID] {
+        var seen: Set<ConnectorID> = []
+        var ordered: [ConnectorID] = []
+        for item in items where seen.insert(item.source).inserted {
+            ordered.append(item.source)
+        }
+        return ordered
     }
 
     // MARK: - Prompt assembly
@@ -194,7 +219,9 @@ public struct Synthesizer: Sendable {
         generatedAt: Date,
         weekday: String,
         spaceFilter: String?,
-        connectorErrors: [ConnectorErrorSummary]
+        connectorErrors: [ConnectorErrorSummary],
+        signalsRead: Int,
+        sources: [ConnectorID]
     ) -> Brief {
         // Trust the model's masthead when it followed the "The <Weekday> Brief"
         // instruction; otherwise fall back to the deterministic, correct form.
@@ -202,19 +229,14 @@ public struct Synthesizer: Sendable {
             ? "The \(weekday) Brief"
             : synthesized.masthead
 
+        // The model emits a free-form mood string; map it onto the robust taxonomy
+        // (unknown / blank → the neutral default) so the hero + accent are stable.
+        let mood = BriefMood(rawValue: synthesized.mood.trimmingCharacters(in: .whitespacesAndNewlines))
+            ?? .default
+
+        let lead = synthesized.lead.map(Self.mapEntry)
         let sections = synthesized.sections.map { section in
-            BriefSection(
-                title: section.title,
-                entries: section.entries.map { entry in
-                    BriefEntry(
-                        headline: entry.headline,
-                        detail: entry.detail.flatMap { $0.isEmpty ? nil : $0 },
-                        url: entry.url.flatMap(URL.init(string:)),
-                        priority: entry.priority,
-                        ctaLabel: entry.ctaLabel.flatMap { $0.isEmpty ? nil : $0 }
-                    )
-                }
-            )
+            BriefSection(title: section.title, entries: section.entries.map(Self.mapEntry))
         }
 
         return Brief(
@@ -222,9 +244,27 @@ public struct Synthesizer: Sendable {
             spaceFilter: spaceFilter,
             masthead: masthead,
             lede: synthesized.lede,
-            hero: HeroArtworkCatalog.heroForDate(generatedAt, calendar: calendar),
+            lead: lead,
+            mood: mood,
+            // Tone-matched hero: pick by mood, deterministic by date, falling back to
+            // the plain date pick when the mood has no matching painting.
+            hero: HeroArtworkCatalog.heroForMood(mood, date: generatedAt, calendar: calendar),
             sections: sections,
+            signalsRead: signalsRead,
+            sources: sources,
             connectorErrors: connectorErrors
+        )
+    }
+
+    /// Maps a single DTO entry into a ``BriefEntry``, normalizing empty optionals to
+    /// `nil` and parsing the url string. Shared by the lead and section entries.
+    static func mapEntry(_ entry: SynthesizedBrief.Entry) -> BriefEntry {
+        BriefEntry(
+            headline: entry.headline,
+            detail: entry.detail.flatMap { $0.isEmpty ? nil : $0 },
+            url: entry.url.flatMap(URL.init(string:)),
+            priority: entry.priority,
+            ctaLabel: entry.ctaLabel.flatMap { $0.isEmpty ? nil : $0 }
         )
     }
 
@@ -242,7 +282,7 @@ public struct Synthesizer: Sendable {
         schema: .object([
             "type": "object",
             "additionalProperties": false,
-            "required": .array(["masthead", "lede", "sections"]),
+            "required": .array(["masthead", "lede", "mood", "lead", "sections"]),
             "properties": .object([
                 "masthead": .object([
                     "type": "string",
@@ -252,6 +292,17 @@ public struct Synthesizer: Sendable {
                     "type": "string",
                     "description": "One or two sentences of editorial prose summarizing the day.",
                 ]),
+                "mood": .object([
+                    "type": "string",
+                    "enum": .array(BriefMood.allCases.map { .string($0.rawValue) }),
+                    "description": """
+                    The character of the day, chosen from the allowed values: \
+                    'clear' (empty or light day), 'steady' (a normal, balanced day), \
+                    'busy' (heavy, many competing demands), 'eventful' (defined by \
+                    something big — a launch, a major meeting, a milestone).
+                    """,
+                ]),
+                "lead": leadSchema,
                 "sections": .object([
                     "type": "array",
                     "items": sectionSchema,
@@ -259,6 +310,16 @@ public struct Synthesizer: Sendable {
             ]),
         ])
     )
+
+    /// The lead-story schema: a nullable entry object (the single most important item
+    /// of the day, not repeated in `sections`), or `null` on a quiet day.
+    private static let leadSchema: JSONValue = .object([
+        "type": .array(["object", "null"]),
+        "additionalProperties": false,
+        "required": .array(["headline", "detail", "url", "priority", "ctaLabel"]),
+        "description": "The single most important item of the day, or null when nothing leads.",
+        "properties": entryProperties,
+    ])
 
     private static let sectionSchema: JSONValue = .object([
         "type": "object",
@@ -277,24 +338,28 @@ public struct Synthesizer: Sendable {
         "type": "object",
         "additionalProperties": false,
         "required": .array(["headline", "detail", "url", "priority", "ctaLabel"]),
-        "properties": .object([
-            "headline": .object(["type": "string"]),
-            "detail": .object([
-                "type": .array(["string", "null"]),
-                "description": "A short paragraph of context, or null.",
-            ]),
-            "url": .object([
-                "type": .array(["string", "null"]),
-                "description": "A deep link back to the source item, or null.",
-            ]),
-            "priority": .object([
-                "type": .array(["integer", "null"]),
-                "description": "Lower = more important, or null when unranked.",
-            ]),
-            "ctaLabel": .object([
-                "type": .array(["string", "null"]),
-                "description": "A short call-to-action label, or null.",
-            ]),
+        "properties": entryProperties,
+    ])
+
+    /// The shared property set for an entry object, reused by both a section entry
+    /// and the (nullable) lead story.
+    private static let entryProperties: JSONValue = .object([
+        "headline": .object(["type": "string"]),
+        "detail": .object([
+            "type": .array(["string", "null"]),
+            "description": "A short paragraph of context, or null.",
+        ]),
+        "url": .object([
+            "type": .array(["string", "null"]),
+            "description": "A deep link back to the source item, or null.",
+        ]),
+        "priority": .object([
+            "type": .array(["integer", "null"]),
+            "description": "Lower = more important, or null when unranked.",
+        ]),
+        "ctaLabel": .object([
+            "type": .array(["string", "null"]),
+            "description": "A short call-to-action label, or null.",
         ]),
     ])
 }

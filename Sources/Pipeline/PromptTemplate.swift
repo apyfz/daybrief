@@ -150,8 +150,20 @@ extension PromptTemplate {
     "The <Weekday> Brief" (e.g. "The Wednesday Brief"). Use the weekday provided to you.
     - lede: one or two sentences of editorial prose summarizing the day. Observational, \
     never a list. This is the reader's first impression.
+    - mood: read the shape of the day and choose exactly one of these values — \
+    "clear" (an empty or light day, room to breathe), "steady" (a normal, balanced \
+    day), "busy" (a heavy day with many competing demands), or "eventful" (a day \
+    defined by something big — a launch, a major meeting, a milestone). This is the \
+    same editorial judgement you make for the lede, named in one word; the edition's \
+    artwork and accent are chosen to match it.
+    - lead: the single most important thing today, surfaced as the lead story, with the \
+    same fields as a section entry (headline, optional detail/url/priority/ctaLabel). \
+    Choose exactly one item and make it the strongest one. Do NOT also repeat this item \
+    in any section — the lead stands alone above them. On a genuinely quiet day with \
+    nothing to lead with, set lead to null.
     - sections: a small number of titled movements (e.g. "Push your work forward", \
-    "On the calendar", "What slipped overnight"). Prefer few strong sections over many.
+    "On the calendar", "What slipped overnight") covering everything OTHER than the lead. \
+    Prefer few strong sections over many.
     - entries within each section: each has a headline the reader sees first, an optional \
     paragraph of context (detail), an optional url back to the source item, an optional \
     priority (lower number = more important), and an optional short ctaLabel for the accent \
@@ -166,8 +178,11 @@ extension PromptTemplate {
     static let defaultRenderNotes = """
     Layout guidance:
     - Open with the lede before any section. Keep it to one or two sentences.
-    - Lead with a single "Push your work forward" section when there is a clear \
-    priority; give it one well-contextualized entry rather than several thin ones.
+    - Pick the day's mood from the lede's own judgement: clear on a light day, busy \
+    when demands pile up, eventful when one big thing dominates, steady otherwise.
+    - Choose the single most important item as the lead story — one well-contextualized \
+    entry, rendered large. Do not duplicate it in the sections below; the sections cover \
+    everything else.
     - Group calendar items under one dated section; group what slipped or is unread \
     under another. Do not create a section for a category with nothing in it.
     - Headlines are short and concrete (a verb where natural). Context paragraphs are \

@@ -167,6 +167,68 @@ struct BriefGeneratorTests {
         #expect(brief.connectorErrors.isEmpty)
     }
 
+    @Test("provenance: signalsRead counts items and sources are the producing connectors")
+    func provenanceCountsItemsAndSources() async throws {
+        // "a" produces one item, "b" produces one item, "dead" throws (no items).
+        let a = StubConnector.succeeding(id: "a", title: "From A")
+        let b = StubConnector.succeeding(id: "b", title: "From B")
+        let dead = StubConnector(id: "dead", behavior: .throwError(.network(statusCode: 500, reason: "boom")))
+
+        var registry = ConnectorRegistry()
+        registry.register(a)
+        registry.register(b)
+        registry.register(dead)
+
+        let accounts: [ConnectorID: [Account]] = [
+            "a": [TestAccounts.one(connectorId: "a")],
+            "b": [TestAccounts.one(connectorId: "b")],
+            "dead": [TestAccounts.one(connectorId: "dead")],
+        ]
+
+        let brief = try await makeGenerator().generate(
+            registry: registry,
+            accountsByConnector: accounts,
+            tokenProvider: StaticTokenProvider(token: "t"),
+            template: .bundledDefault,
+            adapter: makeAdapter(),
+            model: "stub/model"
+        )
+
+        // Two items read (one from a, one from b); the dead connector contributed none.
+        #expect(brief.signalsRead == 2)
+        // Sources are the distinct connectors that actually produced items.
+        #expect(Set(brief.sources) == [ConnectorID("a"), ConnectorID("b")])
+    }
+
+    @Test("provenance: a quiet day with no items falls back to the fetched connectors")
+    func provenanceQuietDayFallsBackToFetched() async throws {
+        // Both connectors succeed but produce no items (empty raw).
+        let quiet1 = StubConnector(id: "quiet1", behavior: .succeed([]))
+        let quiet2 = StubConnector(id: "quiet2", behavior: .succeed([]))
+
+        var registry = ConnectorRegistry()
+        registry.register(quiet1)
+        registry.register(quiet2)
+
+        let accounts: [ConnectorID: [Account]] = [
+            "quiet1": [TestAccounts.one(connectorId: "quiet1")],
+            "quiet2": [TestAccounts.one(connectorId: "quiet2")],
+        ]
+
+        let brief = try await makeGenerator().generate(
+            registry: registry,
+            accountsByConnector: accounts,
+            tokenProvider: StaticTokenProvider(token: "t"),
+            template: .bundledDefault,
+            adapter: makeAdapter(),
+            model: "stub/model"
+        )
+
+        #expect(brief.signalsRead == 0)
+        // No items to derive sources from, so the colophon names the fetched connectors.
+        #expect(Set(brief.sources) == [ConnectorID("quiet1"), ConnectorID("quiet2")])
+    }
+
     @Test("a missing token surfaces as an auth error, not a crash")
     func missingTokenSurfacesAsAuth() async throws {
         let connector = StubConnector.succeeding(id: "needstoken", title: "x")

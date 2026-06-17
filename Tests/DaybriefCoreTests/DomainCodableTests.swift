@@ -93,6 +93,97 @@ struct DomainCodableTests {
         #expect(try roundTrip(brief) == brief)
     }
 
+    @Test("Brief round-trips the editorial extensions: lead, mood, provenance, hero accent")
+    func briefEditorialExtensionsRoundTrip() throws {
+        let brief = Brief(
+            generatedAt: Date(timeIntervalSince1970: 1_750_000_500),
+            spaceFilter: "work",
+            masthead: "The Wednesday Brief",
+            lede: "A launch dominates the day.",
+            lead: BriefEntry(
+                headline: "Ship the launch",
+                detail: "Everything is staged.",
+                url: URL(string: "https://example.com/launch"),
+                priority: 0,
+                ctaLabel: "Let's ship it"
+            ),
+            mood: .eventful,
+            hero: HeroArtwork(
+                assetName: "turner-whalers",
+                title: "Whalers",
+                artist: "J. M. W. Turner",
+                year: "ca. 1845",
+                sourceURL: URL(string: "https://example.com/art"),
+                accentHex: "#C06A2E"
+            ),
+            sections: [BriefSection(title: "On the calendar", entries: [BriefEntry(headline: "Standup")])],
+            signalsRead: 14,
+            sources: [.gmail, .gcal],
+            connectorErrors: []
+        )
+
+        let restored = try roundTrip(brief)
+        #expect(restored == brief)
+        #expect(restored.lead?.headline == "Ship the launch")
+        #expect(restored.mood == .eventful)
+        #expect(restored.signalsRead == 14)
+        #expect(restored.sources == [.gmail, .gcal])
+        #expect(restored.hero?.accentHex == "#C06A2E")
+    }
+
+    @Test("an older Brief payload missing the new fields decodes with safe defaults")
+    func briefDecodesLegacyPayload() throws {
+        // A payload written before lead/mood/signalsRead/sources existed.
+        let json = #"""
+        {
+          "id": "00000000-0000-0000-0000-000000000002",
+          "generatedAt": 0,
+          "masthead": "The Monday Brief",
+          "lede": "Calm.",
+          "sections": [],
+          "connectorErrors": []
+        }
+        """#
+        let brief = try decoder.decode(Brief.self, from: Data(json.utf8))
+        #expect(brief.lead == nil)
+        #expect(brief.mood == nil)
+        #expect(brief.signalsRead == 0)
+        #expect(brief.sources.isEmpty)
+        #expect(brief.hero == nil)
+    }
+
+    @Test("BriefMood decodes its raw values and maps unknown values to steady")
+    func briefMoodForwardCompatibleDecode() throws {
+        for mood in BriefMood.allCases {
+            let data = try encoder.encode(mood)
+            #expect(try decoder.decode(BriefMood.self, from: data) == mood)
+        }
+        // An unknown raw value decodes to the steady default rather than throwing.
+        let unknown = try decoder.decode(BriefMood.self, from: Data("\"frantic\"".utf8))
+        #expect(unknown == .steady)
+        // It encodes as a bare string.
+        #expect(try encoder.encode(BriefMood.busy) == Data("\"busy\"".utf8))
+    }
+
+    @Test("HeroArtwork round-trips the accent hex and tolerates its absence")
+    func heroArtworkAccentRoundTrips() throws {
+        let withAccent = HeroArtwork(
+            assetName: "vermeer-water-pitcher",
+            title: "Young Woman with a Water Pitcher",
+            artist: "Johannes Vermeer",
+            year: "ca. 1662",
+            accentHex: "#B58A2E"
+        )
+        #expect(try roundTrip(withAccent) == withAccent)
+
+        // A payload predating accentHex decodes to nil.
+        let legacy = #"""
+        { "assetName": "x", "title": "t", "artist": "a" }
+        """#
+        let decoded = try decoder.decode(HeroArtwork.self, from: Data(legacy.utf8))
+        #expect(decoded.accentHex == nil)
+    }
+
     @Test("Connection / Account / Space / SecretRef round-trip")
     func connectionGraphRoundTrips() throws {
         let connection = Connection(

@@ -87,6 +87,126 @@ struct SynthesizerTests {
         #expect(entry.url == URL(string: "https://example.com/thread/1"))
     }
 
+    /// Canned JSON exercising the editorial extensions: a mood + a dedicated lead
+    /// story alongside the sections.
+    private static let cannedWithMoodAndLead = """
+    {
+      "masthead": "The Wednesday Brief",
+      "lede": "A launch dominates the day.",
+      "mood": "eventful",
+      "lead": {
+        "headline": "Ship the Cashfeed launch",
+        "detail": "Everything is staged; Dennis signs off at 9.",
+        "url": "https://example.com/launch",
+        "priority": 0,
+        "ctaLabel": "Let's ship it"
+      },
+      "sections": [
+        {
+          "title": "On the calendar",
+          "entries": [
+            { "headline": "Standup at 10:00", "detail": null, "url": null, "priority": null, "ctaLabel": null }
+          ]
+        }
+      ]
+    }
+    """
+
+    @Test("maps mood, the lead story, and a tone-matched hero")
+    func mapsMoodLeadAndTonedHero() async throws {
+        let adapter = StubModelAdapter(structuredResponses: [Self.cannedWithMoodAndLead])
+
+        let brief = try await makeSynthesizer().synthesize(
+            items: [],
+            template: .bundledDefault,
+            adapter: adapter,
+            model: "stub/model"
+        )
+
+        // Mood maps onto the taxonomy.
+        #expect(brief.mood == .eventful)
+
+        // The lead story is its own entry, separate from the sections.
+        let lead = try #require(brief.lead)
+        #expect(lead.headline == "Ship the Cashfeed launch")
+        #expect(lead.priority == 0)
+        #expect(lead.ctaLabel == "Let's ship it")
+        #expect(lead.url == URL(string: "https://example.com/launch"))
+        // The lead is NOT duplicated into the sections.
+        let sectionHeadlines = brief.sections.flatMap { $0.entries.map(\.headline) }
+        #expect(!sectionHeadlines.contains(lead.headline))
+        #expect(brief.sections.first?.title == "On the calendar")
+
+        // The hero is the tone-matched pick for the mood (not the plain by-date pick).
+        let expected = HeroArtworkCatalog.heroForMood(.eventful, date: Self.wednesday(), calendar: Self.utcCalendar)
+        #expect(brief.hero == expected)
+        // Its accent is sampled from the painting (set for every catalog entry).
+        #expect(brief.hero?.accentHex != nil)
+    }
+
+    @Test("an unknown mood string maps to the steady default and lead may be null")
+    func unknownMoodFallsBackAndNullLead() async throws {
+        let json = """
+        {
+          "masthead": "The Wednesday Brief",
+          "lede": "Quiet.",
+          "mood": "frantic",
+          "lead": null,
+          "sections": []
+        }
+        """
+        let adapter = StubModelAdapter(structuredResponses: [json])
+
+        let brief = try await makeSynthesizer().synthesize(
+            items: [],
+            template: .bundledDefault,
+            adapter: adapter,
+            model: "stub/model"
+        )
+
+        #expect(brief.mood == .steady)
+        #expect(brief.lead == nil)
+    }
+
+    @Test("provenance: signalsRead + sources are computed from the items when not supplied")
+    func provenanceDerivedFromItems() async throws {
+        let adapter = StubModelAdapter(structuredResponses: [Self.cannedJSON])
+        let now = Self.wednesday()
+        let items = [
+            BriefItem(source: .gmail, account: "a", space: "work", type: .email, title: "x", timestamp: now),
+            BriefItem(source: .gmail, account: "a", space: "work", type: .email, title: "y", timestamp: now),
+            BriefItem(source: .gcal, account: "b", space: "work", type: .event, title: "z", timestamp: now),
+        ]
+
+        let brief = try await makeSynthesizer().synthesize(
+            items: items,
+            template: .bundledDefault,
+            adapter: adapter,
+            model: "stub/model"
+        )
+
+        #expect(brief.signalsRead == 3)
+        // Distinct sources, in first-seen order.
+        #expect(brief.sources == [.gmail, .gcal])
+    }
+
+    @Test("provenance: explicit signalsRead + sources override the item-derived values")
+    func provenanceExplicitOverride() async throws {
+        let adapter = StubModelAdapter(structuredResponses: [Self.cannedJSON])
+
+        let brief = try await makeSynthesizer().synthesize(
+            items: [],
+            template: .bundledDefault,
+            adapter: adapter,
+            model: "stub/model",
+            signalsRead: 14,
+            sources: [.gmail, .slack]
+        )
+
+        #expect(brief.signalsRead == 14)
+        #expect(brief.sources == [.gmail, .slack])
+    }
+
     @Test("falls back to a weekday masthead when the model omits one")
     func fallsBackToWeekdayMasthead() async throws {
         let blankMasthead = """
@@ -184,7 +304,18 @@ struct SynthesizerTests {
         let schema = Synthesizer.schema.schema
         #expect(schema["additionalProperties"]?.bool == false)
         let required = try #require(schema["required"]?.array)
-        #expect(Set(required.compactMap(\.string)) == ["masthead", "lede", "sections"])
+        #expect(Set(required.compactMap(\.string)) == ["masthead", "lede", "mood", "lead", "sections"])
+
+        // mood is an enum string constrained to the BriefMood raw values.
+        let moodEnum = try #require(schema["properties"]?["mood"]?["enum"]?.array)
+        #expect(Set(moodEnum.compactMap(\.string)) == Set(BriefMood.allCases.map(\.rawValue)))
+
+        // The lead is a nullable entry object requiring the same five properties.
+        let leadSchema = try #require(schema["properties"]?["lead"])
+        let leadType = try #require(leadSchema["type"]?.array)
+        #expect(Set(leadType.compactMap(\.string)) == ["object", "null"])
+        let leadRequired = try #require(leadSchema["required"]?.array)
+        #expect(Set(leadRequired.compactMap(\.string)) == ["headline", "detail", "url", "priority", "ctaLabel"])
 
         // The entry object must require all five properties (optionals as nullable).
         let entrySchema = try #require(

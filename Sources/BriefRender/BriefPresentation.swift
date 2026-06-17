@@ -64,7 +64,82 @@ enum BriefPresentation {
         return key.prefix(1).uppercased() + key.dropFirst()
     }
 
+    // MARK: - Colophon
+
+    /// Builds the print-style provenance footer for a brief, computed factually at
+    /// assembly (never from the model): the filing time, how many signals were read and
+    /// how many surfaced, and the contributing sources by display name — e.g.
+    /// `"Filed 7:02 AM · 14 signals read, 4 surfaced · Gmail · Calendar"`.
+    ///
+    /// On a quiet day (nothing read and nothing surfaced) it degrades to a calm
+    /// `"Filed 7:02 AM · a clear day"`; when signals were read but the day stayed light,
+    /// the counts are still shown honestly. Sources are appended only when present, so a
+    /// brief with no contributing connector simply omits the trailing source segment.
+    ///
+    /// - Parameters:
+    ///   - generatedAt: When the brief was filed (formatted as a bare time).
+    ///   - signalsRead: How many normalized signals were read while assembling.
+    ///   - surfaced: How many items the brief surfaced (lead, if any, plus all section
+    ///     entries) — computed by the caller, not the model.
+    ///   - sources: The contributing connectors, in stable order.
+    ///   - calendar: The calendar / locale / time zone used to format the filing time.
+    static func colophon(
+        generatedAt: Date,
+        signalsRead: Int,
+        surfaced: Int,
+        sources: [ConnectorID],
+        calendar: Calendar
+    ) -> String {
+        var segments = ["Filed \(filedTime(generatedAt, calendar: calendar))"]
+
+        // Quiet day: nothing read and nothing surfaced reads as a clear day rather than
+        // a bare "0 signals read, 0 surfaced".
+        if signalsRead == 0, surfaced == 0 {
+            segments.append("a clear day")
+        } else {
+            segments.append("\(signalsRead) \(pluralized(signalsRead, "signal")) read, \(surfaced) surfaced")
+        }
+
+        if !sources.isEmpty {
+            segments.append(contentsOf: sources.map(connectorDisplayName))
+        }
+
+        return segments.joined(separator: " · ")
+    }
+
+    /// English pluralization for a small set of nouns in the colophon: `1 signal`,
+    /// `0 signals`, `14 signals`.
+    private static func pluralized(_ count: Int, _ singular: String) -> String {
+        count == 1 ? singular : singular + "s"
+    }
+
     // MARK: - Time
+
+    /// A bare, locale- and time-zone-aware *time* (no date) for the colophon's filing
+    /// line, e.g. "7:02 AM".
+    ///
+    /// The output is normalized so the day-period separator is a plain ASCII space:
+    /// recent ICU/`DateFormatter` versions place a NARROW NO-BREAK SPACE (U+202F) — and
+    /// sometimes a THIN SPACE (U+2009) — before "AM"/"PM", which would otherwise make the
+    /// rendered colophon non-deterministic across OS/ICU versions and surface an invisible
+    /// glyph in the print-style footer.
+    static func filedTime(_ date: Date, calendar: Calendar) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = calendar
+        formatter.locale = calendar.locale ?? .current
+        formatter.timeZone = calendar.timeZone
+        formatter.dateStyle = .none
+        formatter.timeStyle = .short
+        return normalizingSpaces(formatter.string(from: date))
+    }
+
+    /// Replaces the narrow/thin no-break spaces ICU may emit (around AM/PM, between
+    /// grouping, etc.) with a plain ASCII space so formatted time strings are stable.
+    private static func normalizingSpaces(_ text: String) -> String {
+        text
+            .replacingOccurrences(of: "\u{202F}", with: " ") // narrow no-break space
+            .replacingOccurrences(of: "\u{2009}", with: " ") // thin space
+    }
 
     /// An absolute, locale- and time-zone-aware formatting of `date`.
     static func absoluteTime(_ date: Date, calendar: Calendar) -> String {
@@ -74,7 +149,7 @@ enum BriefPresentation {
         formatter.timeZone = calendar.timeZone
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
-        return formatter.string(from: date)
+        return normalizingSpaces(formatter.string(from: date))
     }
 
     /// A coarse "X ago" / "in X" relative hint of `date` against `now`, fully

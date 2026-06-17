@@ -16,6 +16,15 @@ public struct HeroArtwork: Sendable, Codable, Equatable, Hashable {
     public let year: String?
     /// Public source/attribution URL (museum open-access page), if any.
     public let sourceURL: URL?
+    /// A curated accent color sampled from this painting, as an `#RRGGBB` hex string.
+    ///
+    /// Each edition's accent is the painting's own color (an ochre from the Vermeer,
+    /// a stormy blue from a Turner) rather than a fixed gold, so every brief has its
+    /// own palette (design §brief-design-language, "per-edition accent"). It is kept
+    /// as a plain hex string here because `DaybriefCore` carries no color type; the
+    /// UI (`AppFeature`) converts it to a platform color. `nil` falls back to the
+    /// app's default accent.
+    public let accentHex: String?
 
     /// Creates a hero artwork reference.
     public init(
@@ -23,13 +32,15 @@ public struct HeroArtwork: Sendable, Codable, Equatable, Hashable {
         title: String,
         artist: String,
         year: String? = nil,
-        sourceURL: URL? = nil
+        sourceURL: URL? = nil,
+        accentHex: String? = nil
     ) {
         self.assetName = assetName
         self.title = title
         self.artist = artist
         self.year = year
         self.sourceURL = sourceURL
+        self.accentHex = accentHex
     }
 
     /// A single-line credit, e.g. "The Card Players — Paul Cézanne, 1890–92".

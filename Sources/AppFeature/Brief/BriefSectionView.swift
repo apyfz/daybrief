@@ -14,6 +14,8 @@ struct BriefSectionView: View {
     let section: BriefViewModel.Section
     /// Per-entry CTA labels keyed by entry id; missing keys fall back to the default.
     let ctaLabels: [UUID: String]
+    /// The edition's accent, sampled from its hero painting; defaults to the golden accent.
+    var accent: Color = DaybriefTheme.accent
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -33,7 +35,8 @@ struct BriefSectionView: View {
                 }
                 BriefEntryView(
                     entry: entry,
-                    ctaLabel: ctaLabels[entry.id] ?? "Let's do it"
+                    ctaLabel: ctaLabels[entry.id] ?? "Let's do it",
+                    accent: accent
                 )
             }
         }

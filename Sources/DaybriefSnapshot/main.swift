@@ -13,8 +13,9 @@ import SwiftUI
 // CLI argument (default `/tmp/daybrief-panel.png`).
 
 /// A hand-authored sample brief that exercises every editorial surface: masthead,
-/// italic lede, a procedural hero, two titled sections (the first with a context-rich
-/// entry + a "Let's do it" CTA), and one surfaced connector notice.
+/// italic lede, a procedural hero with a per-edition accent, a large lead story, two
+/// titled sections (the first with a context-rich entry + a "Let's do it" CTA), one
+/// surfaced connector notice, and the factual colophon footer.
 @MainActor
 func makeSampleBrief() -> Brief {
     // A fixed Wednesday so the masthead reads "The Wednesday Brief".
@@ -68,12 +69,28 @@ func makeSampleBrief() -> Brief {
 
     let hero = HeroArtwork(
         // Empty assetName → graceful procedural placeholder (this CLI snapshot tool
-        // has no bundled asset catalog). Credit text mirrors a real catalog entry.
+        // has no bundled asset catalog). Credit text + accent mirror a real catalog
+        // entry so the per-edition accent is exercised offscreen.
         assetName: "",
         title: "The Garden of the Tuileries on a Winter Afternoon",
         artist: "Camille Pissarro",
         year: "1899",
-        sourceURL: URL(string: "https://www.metmuseum.org/art/collection/search/437314")
+        sourceURL: URL(string: "https://www.metmuseum.org/art/collection/search/437314"),
+        accentHex: "#5E7287" // muted winter slate-blue
+    )
+
+    // The single most important item, rendered large as the lead story (kept out of
+    // `sections` so it is not duplicated).
+    let lead = BriefEntry(
+        headline: "Decide the enterprise discounting tier before Maya's review",
+        detail: """
+        It's the one open question blocking her Thursday sign-off, and the last two \
+        threads have already narrowed it to two options — this is a call only you can make.
+        """,
+        url: URL(string: "https://mail.google.com/mail/u/0/#inbox/q3-pricing"),
+        priority: 0,
+        ctaLabel: "Make the call",
+        sourceItemIDs: [UUID()]
     )
 
     let notices = [
@@ -92,8 +109,12 @@ func makeSampleBrief() -> Brief {
         A quiet morning with one decision that actually matters. Clear the roadmap \
         reply early and the rest of the day opens up.
         """,
+        lead: lead,
+        mood: .steady,
         hero: hero,
         sections: [pushSection, watchSection],
+        signalsRead: 18,
+        sources: [.gmail, .gcal, .slack],
         connectorErrors: notices
     )
 }
@@ -109,8 +130,9 @@ func render() throws {
     // `ImageRenderer` does not draw the content of the live panel's `ScrollView`, and
     // it does not rasterize the macOS 26 Liquid Glass surface material — both render
     // blank/black offscreen. `BriefPanelSnapshotView` composes the *same* editorial
-    // subviews (masthead/lede/hero, sections, connector notices) in a plain, non-
-    // scrolling `VStack` over solid paper, so the whole edition rasterizes. It is built
+    // subviews (masthead/lede/hero, lead story, sections, connector notices, colophon)
+    // in a plain, non-scrolling `VStack` over solid paper, so the whole edition
+    // rasterizes. It is built
     // from `AppModel.preview(brief:)`'s same sample brief. A light color scheme matches
     // the warm-paper editorial design.
     _ = AppModel.preview(brief: brief) // exercises the requested preview affordance

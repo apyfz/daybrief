@@ -41,6 +41,8 @@ public struct BriefRenderer: Sendable {
     public func viewModel(_ brief: Brief) -> BriefViewModel {
         let now = dateProvider.now()
 
+        let lead = brief.lead.map(entryViewModel)
+
         let sections = brief.sections.map { section in
             BriefViewModel.Section(
                 id: section.id,
@@ -58,13 +60,28 @@ public struct BriefRenderer: Sendable {
             )
         }
 
+        // Surfaced = the lead (if any) + every section entry. Computed here, factually,
+        // never read from the model — it must always match what the edition actually shows.
+        let surfaced = (brief.lead == nil ? 0 : 1)
+            + brief.sections.reduce(0) { $0 + $1.entries.count }
+
         return BriefViewModel(
             id: brief.id,
             generatedAtRelative: "Generated \(BriefPresentation.relativeTime(of: brief.generatedAt, now: now))",
             generatedAtAbsolute: BriefPresentation.absoluteTime(brief.generatedAt, calendar: calendar),
             spaceFilterDisplay: BriefPresentation.spaceDisplay(brief.spaceFilter),
+            lead: lead,
+            leadCTALabel: brief.lead.flatMap { BriefPresentation.cleaned($0.ctaLabel) },
             sections: sections,
-            connectorErrors: errors
+            connectorErrors: errors,
+            colophon: BriefPresentation.colophon(
+                generatedAt: brief.generatedAt,
+                signalsRead: brief.signalsRead,
+                surfaced: surfaced,
+                sources: brief.sources,
+                calendar: calendar
+            ),
+            accentHex: brief.hero?.accentHex
         )
     }
 
@@ -107,6 +124,13 @@ public struct BriefRenderer: Sendable {
         header { margin-bottom: 2rem; }
         h1 { font-size: 1.5rem; margin: 0 0 0.25rem; }
         .meta { color: GrayText; font-size: 0.85rem; margin: 0; }
+        .lead { margin: 0 0 2rem; padding-bottom: 1.5rem;
+                border-bottom: 2px solid color-mix(in srgb, GrayText 30%, transparent); }
+        .lead .kicker { font-variant: small-caps; letter-spacing: 0.08em; font-size: 0.75rem;
+                        color: GrayText; margin: 0 0 0.4rem; }
+        .lead h2 { font-size: 1.6rem; line-height: 1.2; margin: 0; font-weight: 700; }
+        .lead .detail { color: GrayText; margin: 0.5rem 0 0; }
+        .lead a { display: inline-block; margin-top: 0.5rem; font-size: 0.9rem; }
         section { margin-bottom: 1.75rem; }
         section > h2 { font-size: 1.1rem; margin: 0 0 0.5rem; padding-bottom: 0.25rem;
                        border-bottom: 1px solid color-mix(in srgb, GrayText 35%, transparent); }
@@ -122,6 +146,10 @@ public struct BriefRenderer: Sendable {
         .errors ul { margin: 0; padding-left: 1.1rem; }
         .errors .kind { font-variant: small-caps; color: GrayText; }
         .empty { color: GrayText; font-style: italic; }
+        .colophon { margin-top: 2.5rem; padding-top: 1rem;
+                    border-top: 1px solid color-mix(in srgb, GrayText 25%, transparent);
+                    font-variant: small-caps; letter-spacing: 0.06em;
+                    font-size: 0.78rem; color: GrayText; }
         </style>
         </head>
         <body>
@@ -132,6 +160,20 @@ public struct BriefRenderer: Sendable {
         </header>
 
         """
+
+        // Lead story: the single most important item, set large above the sections.
+        if let lead = vm.lead {
+            html += "<div class=\"lead\">\n<p class=\"kicker\">Lead</p>\n"
+            html += "<h2>\(esc(lead.headline))</h2>\n"
+            if let detail = lead.detail {
+                html += "<p class=\"detail\">\(esc(detail))</p>\n"
+            }
+            if let link = lead.link, let label = vm.leadCTALabel ?? lead.linkLabel {
+                html += "<a href=\"\(esc(link.absoluteString))\""
+                    + " rel=\"noopener noreferrer\">\(esc(label))</a>\n"
+            }
+            html += "</div>\n"
+        }
 
         if vm.isEmpty {
             html += "<p class=\"empty\">No items in this brief.</p>\n"
@@ -165,6 +207,11 @@ public struct BriefRenderer: Sendable {
             html += "</ul>\n</div>\n"
         }
 
+        // Colophon: a quiet, print-style provenance footer at the foot of the edition.
+        if !vm.colophon.isEmpty {
+            html += "<p class=\"colophon\">\(esc(vm.colophon))</p>\n"
+        }
+
         html += """
         </main>
         </body>
@@ -190,6 +237,21 @@ public struct BriefRenderer: Sendable {
         lines.append(heading)
         lines.append("")
         lines.append("_\(vm.generatedAtAbsolute) · \(vm.generatedAtRelative)_")
+
+        // Lead story: set off as a second-level heading above the sections so the
+        // edition leads with its single most important item.
+        if let lead = vm.lead {
+            lines.append("")
+            lines.append("## \(lead.headline)")
+            if let detail = lead.detail {
+                lines.append("")
+                lines.append(detail)
+            }
+            if let link = lead.link, let label = vm.leadCTALabel ?? lead.linkLabel {
+                lines.append("")
+                lines.append("[\(label)](\(link.absoluteString))")
+            }
+        }
 
         if vm.isEmpty {
             lines.append("")
@@ -218,6 +280,14 @@ public struct BriefRenderer: Sendable {
             for error in vm.connectorErrors {
                 lines.append("- **\(error.connectorDisplay)** (\(error.kind.rawValue)) — \(error.message)")
             }
+        }
+
+        // Colophon: a quiet provenance footer, italicized like the meta line.
+        if !vm.colophon.isEmpty {
+            lines.append("")
+            lines.append("---")
+            lines.append("")
+            lines.append("_\(vm.colophon)_")
         }
 
         return lines.joined(separator: "\n") + "\n"

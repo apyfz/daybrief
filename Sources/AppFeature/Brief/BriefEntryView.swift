@@ -13,6 +13,8 @@ struct BriefEntryView: View {
     let entry: BriefViewModel.Entry
     /// The CTA label to print on the badge (e.g. "Let's do it"); defaults sensibly.
     let ctaLabel: String
+    /// The edition's accent, sampled from its hero painting; defaults to the golden accent.
+    var accent: Color = DaybriefTheme.accent
 
     @Environment(\.openURL) private var openURL
 
@@ -35,7 +37,7 @@ struct BriefEntryView: View {
                 Button {
                     openURL(link)
                 } label: {
-                    ActionBadge(label: ctaLabel)
+                    ActionBadge(label: ctaLabel, accent: accent)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("\(ctaLabel): \(entry.headline)")

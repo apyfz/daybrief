@@ -96,6 +96,21 @@ public struct BriefGenerator: Sendable {
             Self.logger.notice("Assembling partial brief: \(connectorErrors.count, privacy: .public) connector(s) failed")
         }
 
+        // Colophon provenance, computed at assembly (never from the model):
+        // - signalsRead is the number of normalized items we actually read.
+        // - sources is the distinct connectors that produced items, in first-seen
+        //   order; when nothing was produced (a quiet day), fall back to the
+        //   connectors that were actually fetched (enabled + had accounts) so the
+        //   colophon still names where we looked.
+        let signalsRead = items.count
+        let fetchedSources = Self.fetchedConnectorIDs(
+            connectors: registry.enabledConnectors,
+            accountsByConnector: accountsByConnector
+        )
+        let sources = Synthesizer.distinctSources(of: items).isEmpty
+            ? fetchedSources
+            : Synthesizer.distinctSources(of: items)
+
         // 3. Synthesize the editorial brief (LLM + repair backstop).
         let brief = try await synthesizer.synthesize(
             items: items,
@@ -103,7 +118,9 @@ public struct BriefGenerator: Sendable {
             adapter: adapter,
             model: model,
             spaceFilter: spaceFilter,
-            connectorErrors: connectorErrors
+            connectorErrors: connectorErrors,
+            signalsRead: signalsRead,
+            sources: sources
         )
 
         // 4. Persist (best path) — failures here are pipeline errors, not connector errors.
@@ -237,6 +254,20 @@ public struct BriefGenerator: Sendable {
             )
             return .failed(id, summary)
         }
+    }
+
+    // MARK: - Provenance
+
+    /// The ids of the connectors that were actually fetched — enabled *and* with at
+    /// least one account to fetch — in registration order. Used as the colophon's
+    /// source list on a quiet day that produced no items.
+    static func fetchedConnectorIDs(
+        connectors: [any Connector],
+        accountsByConnector: [ConnectorID: [Account]]
+    ) -> [ConnectorID] {
+        connectors
+            .map(\.id)
+            .filter { !(accountsByConnector[$0] ?? []).isEmpty }
     }
 
     // MARK: - Fetch window

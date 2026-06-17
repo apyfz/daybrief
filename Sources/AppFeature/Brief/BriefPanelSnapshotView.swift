@@ -8,8 +8,9 @@ import SwiftUI
 /// `ImageRenderer` does not draw the content of a `ScrollView` during its offscreen
 /// pass, and it does not rasterize the macOS 26 Liquid Glass material — so the live
 /// ``BriefPanelView`` (which uses both) snapshots as a blank page. This view composes
-/// the *same* editorial subviews (``BriefHeroHeaderView``, ``BriefSectionView``,
-/// ``BriefConnectorNoticesView``, the same masthead/lede/credit chrome) inside a plain
+/// the *same* editorial subviews (``BriefHeroHeaderView``, ``BriefLeadView``,
+/// ``BriefSectionView``, ``BriefConnectorNoticesView``, ``BriefColophonView``, the same
+/// masthead/lede/credit chrome, colored by the same per-edition accent) inside a plain
 /// `VStack` over solid paper, so the full edition renders. It is a faithful stand-in
 /// for the panel's body, used only by the snapshot tool — the shipping panel is
 /// unchanged.
@@ -28,6 +29,7 @@ public struct BriefPanelSnapshotView: View {
     public var body: some View {
         let vm = BriefRenderer().viewModel(brief)
         let ctaLabels = ctaLabelMap(brief)
+        let editionAccent = vm.accentHex.flatMap(Color.init(hex:)) ?? DaybriefTheme.accent
 
         VStack(spacing: 0) {
             headerBar
@@ -38,7 +40,8 @@ public struct BriefPanelSnapshotView: View {
                     hero: brief.hero,
                     masthead: brief.masthead.isEmpty ? mastheadForToday(brief.generatedAt) : brief.masthead,
                     dateline: Self.dateline.string(from: brief.generatedAt).uppercased(),
-                    generationTime: Self.railTime.string(from: brief.generatedAt)
+                    generationTime: Self.railTime.string(from: brief.generatedAt),
+                    accent: editionAccent
                 )
 
                 if !brief.lede.isEmpty {
@@ -50,9 +53,17 @@ public struct BriefPanelSnapshotView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
+                if let lead = vm.lead {
+                    BriefLeadView(
+                        lead: lead,
+                        ctaLabel: vm.leadCTALabel ?? "Let's do it",
+                        accent: editionAccent
+                    )
+                }
+
                 VStack(alignment: .leading, spacing: 26) {
                     ForEach(vm.sections.filter { !$0.entries.isEmpty }) { section in
-                        BriefSectionView(section: section, ctaLabels: ctaLabels)
+                        BriefSectionView(section: section, ctaLabels: ctaLabels, accent: editionAccent)
                             .padding(16)
                             .editorialCard()
                     }
@@ -63,11 +74,8 @@ public struct BriefPanelSnapshotView: View {
                         .padding(.top, 4)
                 }
 
-                Text(vm.generatedAtRelative)
-                    .font(DaybriefTheme.serifBody(10))
-                    .foregroundStyle(DaybriefTheme.inkSecondary.opacity(0.7))
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.top, 2)
+                BriefColophonView(colophon: vm.colophon)
+                    .padding(.top, 6)
             }
             .padding(.horizontal, 18)
             .padding(.top, 16)
@@ -75,7 +83,7 @@ public struct BriefPanelSnapshotView: View {
         }
         .frame(width: panelWidth)
         .background(DaybriefTheme.paper)
-        .tint(DaybriefTheme.accent)
+        .tint(editionAccent)
     }
 
     private var headerBar: some View {

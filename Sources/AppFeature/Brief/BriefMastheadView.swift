@@ -11,6 +11,8 @@ import SwiftUI
 struct BriefMastheadView: View {
     /// The full masthead text, e.g. "The Wednesday Brief".
     let masthead: String
+    /// The edition's accent, sampled from its hero painting; defaults to the golden accent.
+    var accent: Color = DaybriefTheme.accent
 
     /// The italicized leading article, if the masthead begins with "The ".
     private var article: String? {
@@ -28,12 +30,12 @@ struct BriefMastheadView: View {
             if let article {
                 Text(article)
                     .font(DaybriefTheme.serifDisplay(30).italic())
-                    .foregroundStyle(DaybriefTheme.accent)
+                    .foregroundStyle(accent)
                     .shadow(color: .black.opacity(0.35), radius: 6, y: 1)
             }
             Text(rest)
                 .font(DaybriefTheme.serifDisplay(48))
-                .foregroundStyle(DaybriefTheme.accent)
+                .foregroundStyle(accent)
                 .multilineTextAlignment(.center)
                 .minimumScaleFactor(0.6)
                 .lineLimit(2)

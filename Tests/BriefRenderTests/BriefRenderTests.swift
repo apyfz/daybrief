@@ -7,7 +7,7 @@ import Testing
 struct BriefRenderTests {
     // A pinned clock and a fixed UTC/en_US_POSIX calendar keep every output
     // deterministic — no wall-clock reads, no locale/time-zone drift.
-    private static let generatedAt = Date(timeIntervalSince1970: 1_750_000_000) // 2025-06-15 14:26:40 UTC
+    private static let generatedAt = Date(timeIntervalSince1970: 1_750_000_000) // 2025-06-15 15:06:40 UTC
     private static let now = generatedAt.addingTimeInterval(2 * 3600 + 30) // +2h (just past)
 
     private func makeRenderer() -> BriefRenderer {
@@ -25,6 +25,21 @@ struct BriefRenderTests {
             id: UUID(uuidString: "00000000-0000-0000-0000-0000000000AA")!,
             generatedAt: Self.generatedAt,
             spaceFilter: "work",
+            lead: BriefEntry(
+                id: UUID(uuidString: "00000000-0000-0000-0000-0000000000A0")!,
+                headline: "Sign off the Q3 launch plan",
+                detail: "Everything downstream is waiting on your go/no-go.",
+                url: URL(string: "https://docs.google.com/launch"),
+                priority: 0,
+                ctaLabel: "Decide now"
+            ),
+            hero: HeroArtwork(
+                assetName: "turner-whalers",
+                title: "Whalers",
+                artist: "J. M. W. Turner",
+                year: "ca. 1845",
+                accentHex: "#C06A2E"
+            ),
             sections: [
                 BriefSection(
                     id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
@@ -65,6 +80,8 @@ struct BriefRenderTests {
                     entries: [] // empty → skipped in output
                 ),
             ],
+            signalsRead: 14,
+            sources: [.gmail, .gcal],
             connectorErrors: [
                 ConnectorErrorSummary(connectorId: .slack, kind: .timeout, message: "Fetch exceeded budget"),
                 ConnectorErrorSummary(connectorId: .gmail, kind: .auth, message: "Token expired"),
@@ -127,13 +144,61 @@ struct BriefRenderTests {
         let brief = Brief(generatedAt: Self.generatedAt)
         let vm = makeRenderer().viewModel(brief)
         #expect(vm.isEmpty)
+        #expect(vm.lead == nil)
         #expect(vm.connectorErrors.isEmpty)
+    }
+
+    // MARK: - Lead, colophon, accent
+
+    @Test("viewModel projects the lead separately from sections, with its CTA")
+    func viewModelLead() throws {
+        let vm = makeRenderer().viewModel(sampleBrief())
+
+        let lead = try #require(vm.lead)
+        #expect(lead.headline == "Sign off the Q3 launch plan")
+        #expect(lead.detail == "Everything downstream is waiting on your go/no-go.")
+        #expect(lead.link?.absoluteString == "https://docs.google.com/launch")
+        #expect(vm.leadCTALabel == "Decide now")
+        #expect(!vm.isEmpty)
+
+        // The lead is NOT duplicated into the sections (engine keeps them separate).
+        let headlines = vm.sections.flatMap { $0.entries.map(\.headline) }
+        #expect(!headlines.contains("Sign off the Q3 launch plan"))
+    }
+
+    @Test("viewModel builds a factual colophon: filing time, counts, source names")
+    func viewModelColophon() {
+        let vm = makeRenderer().viewModel(sampleBrief())
+        // 14 read; surfaced = lead (1) + 3 Priorities entries + 0 in empty section = 4.
+        // Sources map to display names in the brief's order (gmail, gcal).
+        #expect(vm.colophon == "Filed 3:06 PM · 14 signals read, 4 surfaced · Gmail · Google Calendar")
+    }
+
+    @Test("colophon degrades to a clear day when nothing was read or surfaced")
+    func viewModelColophonQuietDay() {
+        let brief = Brief(generatedAt: Self.generatedAt, signalsRead: 0, sources: [])
+        let vm = makeRenderer().viewModel(brief)
+        #expect(vm.colophon == "Filed 3:06 PM · a clear day")
+    }
+
+    @Test("colophon pluralizes the signal count and shows counts even on a light day")
+    func viewModelColophonPluralization() {
+        // One signal read, nothing surfaced (read but not surfaced) — still honest.
+        let one = Brief(generatedAt: Self.generatedAt, signalsRead: 1, sources: [.gmail])
+        #expect(makeRenderer().viewModel(one).colophon
+            == "Filed 3:06 PM · 1 signal read, 0 surfaced · Gmail")
+    }
+
+    @Test("accentHex passes through from the hero, nil without a hero")
+    func viewModelAccent() {
+        #expect(makeRenderer().viewModel(sampleBrief()).accentHex == "#C06A2E")
+        #expect(makeRenderer().viewModel(Brief(generatedAt: Self.generatedAt)).accentHex == nil)
     }
 
     // MARK: - HTML
 
     @Test("HTML is a well-formed, self-contained document with expected structure")
-    func htmlStructure() {
+    func htmlStructure() throws {
         let html = makeRenderer().renderHTML(sampleBrief())
 
         #expect(html.hasPrefix("<!DOCTYPE html>"))
@@ -149,9 +214,23 @@ struct BriefRenderTests {
         #expect(html.contains("<h2>Priorities</h2>"))
         #expect(!html.contains("What slipped"))
 
+        // Lead story rendered prominently above the sections, with its kicker + CTA.
+        #expect(html.contains("<div class=\"lead\">"))
+        #expect(html.contains("<p class=\"kicker\">Lead</p>"))
+        #expect(html.contains("<h2>Sign off the Q3 launch plan</h2>"))
+        #expect(html.contains(">Decide now</a>")) // lead CTA label preferred over host
+        // The lead appears before the first section heading.
+        let leadIdx = try #require(html.range(of: "Sign off the Q3 launch plan"))
+        let firstSection = try #require(html.range(of: "<h2>Priorities</h2>"))
+        #expect(leadIdx.lowerBound < firstSection.lowerBound)
+
         // Error block surfaced.
         #expect(html.contains("Some sources could not be reached"))
         #expect(html.contains("<strong>Slack</strong>"))
+
+        // Colophon footer at the foot of the edition.
+        #expect(html.contains("<p class=\"colophon\">"))
+        #expect(html.contains("Filed 3:06 PM · 14 signals read, 4 surfaced · Gmail · Google Calendar"))
     }
 
     @Test("HTML escapes all user content — no injection from titles/bodies")
@@ -226,9 +305,17 @@ struct BriefRenderTests {
         #expect(md.contains("[mail.google.com](https://mail.google.com/#all/abc)"))
         #expect(md.contains("He's blocked on your sign-off."))
 
+        // Lead story set off above the sections as its own heading, before "Priorities".
+        let lead = try #require(md.range(of: "## Sign off the Q3 launch plan"))
+        #expect(try lead.lowerBound < (#require(md.range(of: "## Priorities")).lowerBound))
+        #expect(md.contains("[Decide now](https://docs.google.com/launch)"))
+
         // Error block.
         #expect(md.contains("## Some sources could not be reached"))
         #expect(md.contains("**Slack** (timeout) — Fetch exceeded budget"))
+
+        // Colophon footer, italicized after a rule.
+        #expect(md.contains("_Filed 3:06 PM · 14 signals read, 4 surfaced · Gmail · Google Calendar_"))
         #expect(md.hasSuffix("\n"))
     }
 

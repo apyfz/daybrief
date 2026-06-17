@@ -4,13 +4,16 @@ import DaybriefCore
 import SwiftUI
 
 /// The showpiece: the daily brief presented as a calm, literary morning
-/// periodical — masthead over a fine-art hero, vertical date/time rails, an
-/// italic serif lede, and titled "movements" of prioritized action cards, each
-/// with a golden starburst CTA. Lives in the `MenuBarExtra(.window)` panel.
+/// periodical — masthead over a fine-art hero, vertical date/time rails, an italic
+/// serif lede, a large **lead story**, and titled "movements" of prioritized action
+/// cards, each with a starburst CTA, closed by a print-style **colophon**. Lives in
+/// the `MenuBarExtra(.window)` panel.
 ///
-/// This view owns *presentation only*. Ordering, link-safety, and time formatting
-/// come from ``BriefRenderer/viewModel(_:)``; the editorial chrome (masthead, lede,
-/// hero, generation time) is read from the originating ``Brief`` on the model.
+/// This view owns *presentation only*. Ordering, link-safety, time formatting, the
+/// lead projection, the factual colophon, and the per-edition accent hex all come
+/// from ``BriefRenderer/viewModel(_:)``; the editorial chrome (masthead, lede, hero)
+/// is read from the originating ``Brief`` on the model. Each edition is colored by
+/// its hero painting's accent (``accent``), falling back to the app's golden accent.
 @MainActor
 public struct BriefPanelView: View {
     @State private var model: AppModel
@@ -41,7 +44,15 @@ public struct BriefPanelView: View {
         }
         .frame(width: panelWidth)
         .background(panelSurface)
-        .tint(DaybriefTheme.accent)
+        .tint(accent)
+    }
+
+    /// The edition's accent: the current brief's hero painting color (a per-edition
+    /// palette), falling back to the app's golden accent when there is no brief, no
+    /// hero, or no curated/parsable hex (design §brief-design-language, "per-edition
+    /// accent").
+    private var accent: Color {
+        model.currentBrief?.hero?.accentHex.flatMap(Color.init(hex:)) ?? DaybriefTheme.accent
     }
 
     // MARK: - Header bar
@@ -138,49 +149,63 @@ public struct BriefPanelView: View {
     private func edition(for brief: Brief) -> some View {
         let vm = BriefRenderer().viewModel(brief)
         let ctaLabels = ctaLabelMap(brief)
+        // Color this edition by its own painting (passed through ``BriefViewModel``),
+        // independent of which brief is "current".
+        let editionAccent = vm.accentHex.flatMap(Color.init(hex:)) ?? DaybriefTheme.accent
 
         let editionBody = VStack(alignment: .leading, spacing: 22) {
-                BriefHeroHeaderView(
-                    hero: brief.hero,
-                    masthead: brief.masthead.isEmpty ? mastheadForToday(brief.generatedAt) : brief.masthead,
-                    dateline: Self.dateline.string(from: brief.generatedAt).uppercased(),
-                    generationTime: Self.railTime.string(from: brief.generatedAt)
+            BriefHeroHeaderView(
+                hero: brief.hero,
+                masthead: brief.masthead.isEmpty ? mastheadForToday(brief.generatedAt) : brief.masthead,
+                dateline: Self.dateline.string(from: brief.generatedAt).uppercased(),
+                generationTime: Self.railTime.string(from: brief.generatedAt),
+                accent: editionAccent
+            )
+
+            if !brief.lede.isEmpty {
+                Text(brief.lede)
+                    .font(DaybriefTheme.serifDisplay(16).italic())
+                    .foregroundStyle(DaybriefTheme.ink.opacity(0.85))
+                    .lineSpacing(4)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            // The lead story, set large directly under the lede and apart from the
+            // sections below. The engine keeps it out of `sections`, so it is not
+            // duplicated.
+            if let lead = vm.lead {
+                BriefLeadView(
+                    lead: lead,
+                    ctaLabel: vm.leadCTALabel ?? "Let's do it",
+                    accent: editionAccent
                 )
+            }
 
-                if !brief.lede.isEmpty {
-                    Text(brief.lede)
-                        .font(DaybriefTheme.serifDisplay(16).italic())
-                        .foregroundStyle(DaybriefTheme.ink.opacity(0.85))
-                        .lineSpacing(4)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-
-                if vm.isEmpty {
-                    quietDay
-                } else {
-                    VStack(alignment: .leading, spacing: 26) {
-                        ForEach(vm.sections.filter { !$0.entries.isEmpty }) { section in
-                            BriefSectionView(section: section, ctaLabels: ctaLabels)
-                                .modifier(EditorialCardModifier())
-                        }
+            if vm.isEmpty {
+                quietDay(accent: editionAccent)
+            } else if !vm.sections.allSatisfy({ $0.entries.isEmpty }) {
+                VStack(alignment: .leading, spacing: 26) {
+                    ForEach(vm.sections.filter { !$0.entries.isEmpty }) { section in
+                        BriefSectionView(section: section, ctaLabels: ctaLabels, accent: editionAccent)
+                            .modifier(EditorialCardModifier())
                     }
                 }
-
-                if !vm.connectorErrors.isEmpty {
-                    BriefConnectorNoticesView(errors: vm.connectorErrors)
-                        .padding(.top, 4)
-                }
-
-                Text(vm.generatedAtRelative)
-                    .font(DaybriefTheme.serifBody(10))
-                    .foregroundStyle(DaybriefTheme.inkSecondary.opacity(0.7))
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.top, 2)
             }
-            .padding(.horizontal, 18)
-            .padding(.top, 16)
-            .padding(.bottom, 22)
+
+            if !vm.connectorErrors.isEmpty {
+                BriefConnectorNoticesView(errors: vm.connectorErrors)
+                    .padding(.top, 4)
+            }
+
+            // The colophon replaces the old relative-time footer: a quiet,
+            // print-style provenance line at the foot of the edition.
+            BriefColophonView(colophon: vm.colophon)
+                .padding(.top, 6)
+        }
+        .padding(.horizontal, 18)
+        .padding(.top, 16)
+        .padding(.bottom, 22)
 
         // Size to content, but cap a long edition and scroll within the cap.
         return ViewThatFits(in: .vertical) {
@@ -193,11 +218,11 @@ public struct BriefPanelView: View {
     /// The intentional, calm "quiet day" state: a brief exists but holds no
     /// action items. Emptiness is a feature — we let the lede carry it and add a
     /// single reassuring line rather than padding the page.
-    private var quietDay: some View {
+    private func quietDay(accent: Color) -> some View {
         VStack(spacing: 10) {
             Image(systemName: "leaf")
                 .font(.system(size: 24, weight: .light))
-                .foregroundStyle(DaybriefTheme.accent.opacity(0.8))
+                .foregroundStyle(accent.opacity(0.8))
                 .accessibilityHidden(true)
             Text("Nothing demanding your attention. Enjoy the quiet.")
                 .font(DaybriefTheme.serifBody(13).italic())

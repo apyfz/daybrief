@@ -73,4 +73,70 @@ struct HeroArtworkCatalogTests {
             #expect(HeroArtworkCatalog.all.contains(art))
         }
     }
+
+    // MARK: - Per-edition accent
+
+    @Test("every catalog entry carries a sampled #RRGGBB accent hex")
+    func everyEntryHasAccentHex() {
+        for art in HeroArtworkCatalog.all {
+            let hex = art.accentHex
+            #expect(hex != nil)
+            guard let hex else { continue }
+            #expect(hex.hasPrefix("#"))
+            #expect(hex.count == 7)
+            // Hex digits only after the leading '#'.
+            let digits = hex.dropFirst()
+            #expect(digits.allSatisfy { $0.isHexDigit })
+        }
+    }
+
+    // MARK: - Tone-matched selection (heroForMood)
+
+    @Test("every mood has at least one painting tagged for it")
+    func everyMoodIsCovered() {
+        for mood in BriefMood.allCases {
+            let matches = HeroArtworkCatalog.tagged.filter { $0.moods.contains(mood) }
+            #expect(!matches.isEmpty, "mood \(mood) has no tagged painting")
+        }
+    }
+
+    @Test("heroForMood returns a painting tagged with that mood")
+    func heroForMoodMatchesTag() {
+        let date = Self.day(2026, 6, 17)
+        for mood in BriefMood.allCases {
+            let art = HeroArtworkCatalog.heroForMood(mood, date: date, calendar: Self.utcCalendar)
+            let tagged = HeroArtworkCatalog.tagged.first { $0.artwork == art }
+            #expect(tagged?.moods.contains(mood) == true, "heroForMood(\(mood)) returned an untagged painting")
+        }
+    }
+
+    @Test("heroForMood is deterministic for the same mood + date")
+    func heroForMoodIsDeterministic() {
+        let date = Self.day(2026, 6, 17)
+        let first = HeroArtworkCatalog.heroForMood(.eventful, date: date, calendar: Self.utcCalendar)
+        let second = HeroArtworkCatalog.heroForMood(.eventful, date: date, calendar: Self.utcCalendar)
+        #expect(first == second)
+    }
+
+    @Test("heroForMood selects deterministically by day-of-year within the match set")
+    func heroForMoodIndexesByDayOfYear() {
+        let matches = HeroArtworkCatalog.tagged.filter { $0.moods.contains(.busy) }.map(\.artwork)
+        // 1 Jan is day-of-year 1 → index 0 within the busy-tagged subset.
+        let jan1 = Self.day(2026, 1, 1)
+        #expect(HeroArtworkCatalog.heroForMood(.busy, date: jan1, calendar: Self.utcCalendar) == matches[0])
+        // 2 Jan → index 1 (if the subset has more than one painting).
+        if matches.count > 1 {
+            let jan2 = Self.day(2026, 1, 2)
+            #expect(HeroArtworkCatalog.heroForMood(.busy, date: jan2, calendar: Self.utcCalendar) == matches[1])
+        }
+    }
+
+    @Test("heroForMood with a nil mood falls back to the plain by-date pick")
+    func heroForMoodNilFallsBackToDate() {
+        let date = Self.day(2026, 6, 17)
+        #expect(
+            HeroArtworkCatalog.heroForMood(nil, date: date, calendar: Self.utcCalendar)
+                == HeroArtworkCatalog.heroForDate(date, calendar: Self.utcCalendar)
+        )
+    }
 }
