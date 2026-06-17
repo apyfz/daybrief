@@ -69,8 +69,12 @@ public struct KeychainTokenProvider: TokenProvider {
     public func accessToken(for account: Account) async throws -> String {
         let tokenRef = AccountSecrets.tokenRef(for: account.id, connector: account.connectorId)
 
-        // OAuth path: a stored OAuthToken JSON + refresh parameters.
-        if let stored = try await keychain.getCodable(OAuthToken.self, for: tokenRef) {
+        // OAuth path: a stored OAuthToken JSON + refresh parameters. A pasted-token
+        // (Slack) account stores a raw `xoxp-` string, which is NOT OAuthToken JSON —
+        // decoding it would throw. Treat that as "not an OAuth token" and fall through
+        // to the raw-token path below instead of failing the whole account.
+        let storedOAuth = (try? await keychain.getCodable(OAuthToken.self, for: tokenRef)) ?? nil
+        if let stored = storedOAuth {
             guard let clientParams = try await keychain.getCodable(
                 StoredOAuthClient.self,
                 for: AccountSecrets.clientRef(for: tokenRef)

@@ -203,10 +203,18 @@ public struct BriefGenerator: Sendable {
         } catch is CancellationError {
             return .failed(id, ConnectorError.timedOut.summary(connectorId: id))
         } catch {
+            // Keep the underlying reason in `message` (stored on the brief for diagnosis);
+            // the user-facing notice is phrased from `kind`, so this detail stays internal.
+            let detail: String
+            switch error {
+            case let error as ConnectorError: detail = error.summary(connectorId: id).message
+            case let error as TokenProviderError: detail = "\(error)"
+            default: detail = error.localizedDescription
+            }
             let summary = ConnectorErrorSummary(
                 connectorId: id,
                 kind: .auth,
-                message: "Could not get a valid token for this account."
+                message: "Could not get a valid token: \(detail)"
             )
             return .failed(id, summary)
         }
