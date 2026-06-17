@@ -259,7 +259,24 @@ public struct GmailConnector: Connector {
             if result.isRateLimitReason {
                 return .rateLimited(retryAfter: result.retryAfter)
             }
-            return .auth(reason: "Access denied (HTTP 403).")
+            // A hard 403 is almost always the Gmail API not being enabled in the user's
+            // own Cloud project (or read access not granted). Google's body names which —
+            // turn it into an actionable reason.
+            let body = String(decoding: result.data.prefix(400), as: UTF8.self)
+            let reason: String
+            if body.localizedCaseInsensitiveContains("has not been used")
+                || body.localizedCaseInsensitiveContains("accessNotConfigured")
+                || body.localizedCaseInsensitiveContains("is disabled")
+            {
+                reason = "the Gmail API isn't enabled in your Google Cloud project — enable it (APIs & Services → Library → Gmail API), then refresh"
+            } else if body.localizedCaseInsensitiveContains("insufficient")
+                || body.localizedCaseInsensitiveContains("scope")
+            {
+                reason = "Gmail read access wasn't granted — reconnect Gmail and allow read access"
+            } else {
+                reason = "Gmail denied access (HTTP 403) — check the Gmail API is enabled and reconnect"
+            }
+            return .auth(reason: reason)
         case 401:
             return .auth(reason: "Token expired or invalid (HTTP 401).")
         default:

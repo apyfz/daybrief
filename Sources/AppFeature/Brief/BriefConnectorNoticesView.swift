@@ -28,20 +28,37 @@ struct BriefConnectorNoticesView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// Turns a connector failure into a calm, editorial one-liner.
+    /// Turns a connector failure into a one-liner. For auth/network/other we surface the
+    /// connector's actual (already-redacted, actionable) message — e.g. "Slack is missing
+    /// a permission…", "The Gmail API isn't enabled…" — rather than a vague "access has
+    /// lapsed," which was misleading for setup/scope problems. Timeouts stay calm.
     private func notice(for error: BriefViewModel.ConnectorError) -> String {
         let name = error.connectorDisplay
         switch error.kind {
         case .timeout:
             return "\(name) didn't respond in time, so it sat this edition out."
         case .auth:
-            return "\(name) needs to be reconnected — its access has lapsed."
+            return cleaned(error.message) ?? "\(name) needs to be reconnected — its access has lapsed."
         case .network:
-            return "Couldn't reach \(name) just now."
+            return cleaned(error.message) ?? "Couldn't reach \(name) just now."
         case .decode:
             return "\(name) replied in a shape we didn't expect."
         case .other:
-            return "\(name) was unavailable for this brief."
+            return cleaned(error.message) ?? "\(name) was unavailable for this brief."
         }
+    }
+
+    /// Strips the technical `displayMessage` lead-ins so the actionable reason reads
+    /// cleanly in the footer; returns `nil` when there's no useful message.
+    private func cleaned(_ message: String) -> String? {
+        var text = message.trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty else { return nil }
+        for prefix in ["Authentication failed: ", "Network error: "] {
+            if text.hasPrefix(prefix) { text = String(text.dropFirst(prefix.count)) }
+        }
+        if let range = text.range(of: #"^Network error \(HTTP \d+\): "#, options: .regularExpression) {
+            text = String(text[range.upperBound...])
+        }
+        return text.isEmpty ? nil : text
     }
 }

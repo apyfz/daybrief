@@ -36,9 +36,15 @@ finds your mentions.
 3. Add these scopes:
    - **`search:read`** — search your messages to find mentions of you. This
      requires a user token; bot tokens cannot search.
+   - **`im:read`** — list your direct-message conversations.
    - **`im:history`** — read your direct-message history.
+   - **`mpim:read`** — list your group direct-message conversations.
    - **`mpim:history`** — read your group direct-message history.
    - **`users:read`** — resolve user IDs to names so the brief reads naturally.
+
+   > The `*:read` scopes are required to *list* your DM conversations
+   > (`conversations.list`); the `*:history` scopes let Daybrief then *read* them.
+   > Missing the `*:read` scopes is a common cause of a `missing_scope` error.
 
 These are the minimum scopes. (If you later want Daybrief to read specific named
 channels, you can add `channels:history` / `groups:history` — not needed for

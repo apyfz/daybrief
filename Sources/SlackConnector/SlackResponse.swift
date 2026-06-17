@@ -24,7 +24,8 @@ enum SlackResponse {
         }
         guard json["ok"]?.bool == true else {
             let slackError = json["error"]?.string ?? "unknown_error"
-            throw error(forSlackError: slackError, method: method)
+            // Slack includes the missing scope's name in `needed` on a missing_scope error.
+            throw error(forSlackError: slackError, method: method, needed: json["needed"]?.string)
         }
         return json
     }
@@ -35,12 +36,17 @@ enum SlackResponse {
     /// becomes a network error carrying the distributed-app hint (an internal app keeps
     /// Tier-3 limits, so a `ratelimited` reply usually means the app was mis-configured
     /// as publicly distributed). Everything else is ``ConnectorError/other(reason:)``.
-    static func error(forSlackError slackError: String, method: String) -> ConnectorError {
+    static func error(forSlackError slackError: String, method: String, needed: String? = nil) -> ConnectorError {
         switch slackError {
+        case "missing_scope":
+            let which = needed.map { " (\($0))" } ?? ""
+            return .authFailed(reason: "Slack is missing a permission\(which). Add the User Token Scopes "
+                + "(search:read, im:read, im:history, mpim:read, mpim:history, users:read), reinstall the app, "
+                + "then paste the new xoxp- token.")
         case "not_authed", "invalid_auth", "account_inactive", "token_revoked",
-             "token_expired", "no_permission", "missing_scope", "not_allowed_token_type":
+             "token_expired", "no_permission", "not_allowed_token_type":
             return .authFailed(reason: "Slack rejected the token (\(slackError)). "
-                + "Re-create the User OAuth token (xoxp-) with the required scopes.")
+                + "Re-create the User OAuth token (xoxp-) and paste it again.")
         case "ratelimited":
             return .network(statusCode: 429, reason: distributedAppHint)
         default:

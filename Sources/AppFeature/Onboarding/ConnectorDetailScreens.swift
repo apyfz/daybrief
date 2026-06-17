@@ -489,7 +489,7 @@ struct SlackConnectorScreen: View {
     ]
 
     private static let part3Steps: [DBStep] = [
-        DBStep("In the left menu open “OAuth & Permissions.” Scroll down to “Scopes,” and under “User Token Scopes” (not “Bot Token Scopes”) add these four: search:read, im:history, mpim:history, users:read."),
+        DBStep("In the left menu open “OAuth & Permissions.” Scroll to “Scopes,” and under “User Token Scopes” (NOT “Bot Token Scopes”) add all six: search:read, im:read, im:history, mpim:read, mpim:history, users:read."),
     ]
 
     private static let part4Steps: [DBStep] = [
@@ -511,7 +511,9 @@ struct SlackConnectorScreen: View {
 
             DBDetailSection(title: "What Daybrief will read") {
                 DBScopeRow(scope: "search:read", why: "Find @-mentions of you (a user token is required — bot tokens can't search).")
+                DBScopeRow(scope: "im:read", why: "List your direct-message conversations.")
                 DBScopeRow(scope: "im:history", why: "Read your direct-message history from the last day.")
+                DBScopeRow(scope: "mpim:read", why: "List your group direct-message conversations.")
                 DBScopeRow(scope: "mpim:history", why: "Read your group direct-message history from the last day.")
                 DBScopeRow(scope: "users:read", why: "Turn user IDs into names so the brief reads naturally.")
             }
