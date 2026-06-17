@@ -215,7 +215,8 @@ struct GoogleCalendarConnectorTests {
         #expect(query["maxResults"] == "250")
         #expect(query["timeMin"]?.hasPrefix("2026-06-17T00:00:00") == true)
         #expect(query["timeMax"]?.hasPrefix("2026-06-18T23:59:59") == true)
-        #expect(query["fields"]?.contains("htmlLink") == true)
+        // No `fields` projection (dropped — a malformed mask was causing HTTP 400).
+        #expect(query["fields"] == nil)
 
         #expect(sent.httpMethod == "GET")
         #expect(sent.value(forHTTPHeaderField: "Authorization") == "Bearer ya29.calendar-token")

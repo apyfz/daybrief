@@ -168,12 +168,9 @@ public struct GoogleCalendarConnector: Connector {
             URLQueryItem(name: "timeMin", value: RFC3339.string(from: timeMin, timeZone: timeZone)),
             URLQueryItem(name: "timeMax", value: RFC3339.string(from: timeMax, timeZone: timeZone)),
             URLQueryItem(name: "maxResults", value: "250"),
-            URLQueryItem(
-                name: "fields",
-                value: "items(id,status,htmlLink,summary,description,location,"
-                    + "start,end,attendees(email,displayName,responseStatus,self),"
-                    + "organizer,hangoutLink),nextPageToken"
-            ),
+            // No `fields` projection: it's only a payload optimization, and a malformed
+            // field mask is a common cause of HTTP 400 from events.list. The normalizer
+            // reads only the fields it needs from the full response.
         ]
 
         // URLComponents builds a safe absolute URL from validated parts.
@@ -189,12 +186,17 @@ public struct GoogleCalendarConnector: Connector {
         switch error {
         case .nonHTTPResponse:
             return .network(statusCode: nil, reason: "non-HTTP response")
-        case let .unacceptableStatus(code, _):
+        case let .unacceptableStatus(code, body):
             switch code {
             case 401, 403:
                 return .authFailed(reason: "calendar access was denied (HTTP \(code))")
             default:
-                return .network(statusCode: code, reason: "events.list returned HTTP \(code)")
+                // Keep a snippet of Google's error body — for a 4xx it's the API's own
+                // error JSON (no user data), which names the rejected param/field.
+                let snippet = String(decoding: body.prefix(400), as: UTF8.self)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                let detail = snippet.isEmpty ? "" : ": \(snippet)"
+                return .network(statusCode: code, reason: "events.list returned HTTP \(code)\(detail)")
             }
         }
     }

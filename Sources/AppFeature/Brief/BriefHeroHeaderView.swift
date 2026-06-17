@@ -45,16 +45,9 @@ struct BriefHeroHeaderView: View {
                         BriefMastheadView(masthead: masthead, accent: accent)
                     }
                 }
-
-                if let credit = hero?.creditLine {
-                    Text(credit)
-                        .font(DaybriefTheme.serifBody(10).italic())
-                        .foregroundStyle(DaybriefTheme.inkSecondary)
-                        .multilineTextAlignment(.center)
-                        .lineLimit(2)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .accessibilityLabel("Artwork: \(credit)")
-                }
+                // Just the artwork — no visible credit line. (Met open-access works are
+                // CC0/public-domain, so no attribution is required; the credit metadata
+                // stays on `HeroArtwork` for the archive but isn't shown in the panel.)
             }
 
             VerticalRailView(text: generationTime, edge: .trailing)
