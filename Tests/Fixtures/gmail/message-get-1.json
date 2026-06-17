@@ -1,0 +1,15 @@
+{
+  "id": "18f0a1b2c3d4e5f6",
+  "threadId": "18f0a1b2c3d4e5f6",
+  "labelIds": ["UNREAD", "IMPORTANT", "INBOX", "CATEGORY_PERSONAL"],
+  "snippet": "Quick heads up before standup — the staging deploy is green and I moved the release window to 10am. Let me know if that clashes with anything on your end.",
+  "internalDate": "1781000000000",
+  "sizeEstimate": 8421,
+  "payload": {
+    "headers": [
+      { "name": "From", "value": "Ada Lovelace <ada@example.com>" },
+      { "name": "Subject", "value": "Release window moved to 10am" },
+      { "name": "Date", "value": "Tue, 17 Jun 2026 09:30:00 -0700" }
+    ]
+  }
+}

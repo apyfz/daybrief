@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<!--
+  Minimal entitlements for an UNSANDBOXED local development build.
+
+  Daybrief ships as a Developer-ID, unsandboxed menu-bar app (it needs a
+  loopback HTTP listener for the Google OAuth PKCE flow, which the App Sandbox
+  network-server entitlement does not cover for arbitrary 127.0.0.1 ports, plus
+  unrestricted Keychain + Application Support access). The App Sandbox key is
+  therefore intentionally absent (defaults to off).
+
+  Hardened Runtime + the associated entitlements (e.g.
+  com.apple.security.cs.allow-jit if ever needed) and notarization are a later
+  release task — see docs/build. This dev build is signed ad-hoc / unsigned.
+-->
+<dict>
+</dict>
+</plist>

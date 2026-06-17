@@ -1,0 +1,131 @@
+import DaybriefCore
+import Foundation
+
+/// A presentation-ready projection of a ``Brief`` for the SwiftUI layer to render
+/// directly — every display string is pre-computed, entries are pre-ordered, URLs
+/// are parsed and link-safety-checked, and times are pre-formatted into hints.
+///
+/// This type carries **no business logic**: the view layer reads its fields and draws.
+/// All ordering, formatting, and link-safety decisions are made by ``BriefRenderer``
+/// when it builds the view model, so the same projection drives the in-app panel and
+/// can be snapshot-tested deterministically (a clock is injected, never read live).
+public struct BriefViewModel: Sendable, Equatable, Hashable, Identifiable {
+    /// The originating brief's id.
+    public let id: UUID
+    /// A short, human-readable summary of when the brief was generated
+    /// (e.g. "Generated just now" / "Generated 2 hours ago").
+    public let generatedAtRelative: String
+    /// An absolute, locale-formatted generation timestamp (e.g. "Jun 17, 2026 at 7:00 AM").
+    public let generatedAtAbsolute: String
+    /// A display label for the active space filter (e.g. "Work"), or `nil` for all spaces.
+    public let spaceFilterDisplay: String?
+    /// The sections in display order (the brief's own order is preserved).
+    public let sections: [Section]
+    /// Surfaced connector failures, in display order.
+    public let connectorErrors: [ConnectorError]
+
+    /// Whether the brief has no sections and no entries — the view can show an empty state.
+    public var isEmpty: Bool {
+        sections.allSatisfy { $0.entries.isEmpty }
+    }
+
+    /// Creates a brief view model. Normally produced by ``BriefRenderer/viewModel(_:)``.
+    public init(
+        id: UUID,
+        generatedAtRelative: String,
+        generatedAtAbsolute: String,
+        spaceFilterDisplay: String?,
+        sections: [Section],
+        connectorErrors: [ConnectorError]
+    ) {
+        self.id = id
+        self.generatedAtRelative = generatedAtRelative
+        self.generatedAtAbsolute = generatedAtAbsolute
+        self.spaceFilterDisplay = spaceFilterDisplay
+        self.sections = sections
+        self.connectorErrors = connectorErrors
+    }
+
+    /// A titled group of entries, ready to render.
+    public struct Section: Sendable, Equatable, Hashable, Identifiable {
+        /// The section's id (from ``BriefSection``).
+        public let id: UUID
+        /// The section heading.
+        public let title: String
+        /// The entries in priority-then-original display order.
+        public let entries: [Entry]
+
+        /// Creates a section view model.
+        public init(id: UUID, title: String, entries: [Entry]) {
+            self.id = id
+            self.title = title
+            self.entries = entries
+        }
+    }
+
+    /// A single editorial line, ready to render.
+    public struct Entry: Sendable, Equatable, Hashable, Identifiable {
+        /// The entry's id (from ``BriefEntry``).
+        public let id: UUID
+        /// The headline the user reads first.
+        public let headline: String
+        /// Optional supporting detail (`nil`/empty detail is dropped to `nil`).
+        public let detail: String?
+        /// A parsed, link-safe destination (only `http`/`https` survive), or `nil`.
+        ///
+        /// A non-`nil` value here is safe to render as an `href` / open in a browser:
+        /// `javascript:`, `data:`, `file:` and other non-web schemes are rejected.
+        public let link: URL?
+        /// The link's display text (its host, e.g. "mail.google.com"), or `nil`.
+        public let linkLabel: String?
+        /// The raw priority hint (lower = more important), or `nil` when unranked.
+        public let priority: Int?
+
+        /// Creates an entry view model.
+        public init(
+            id: UUID,
+            headline: String,
+            detail: String?,
+            link: URL?,
+            linkLabel: String?,
+            priority: Int?
+        ) {
+            self.id = id
+            self.headline = headline
+            self.detail = detail
+            self.link = link
+            self.linkLabel = linkLabel
+            self.priority = priority
+        }
+    }
+
+    /// A surfaced connector failure, ready to render.
+    public struct ConnectorError: Sendable, Equatable, Hashable, Identifiable {
+        /// A stable identity for list diffing (connector id + kind).
+        public var id: String {
+            "\(connectorId.rawValue).\(kind.rawValue)"
+        }
+
+        /// The failing connector's id.
+        public let connectorId: ConnectorID
+        /// A display name for the connector (e.g. "Gmail").
+        public let connectorDisplay: String
+        /// The failure classification.
+        public let kind: ConnectorErrorSummary.Kind
+        /// The human-readable, already-redacted message.
+        public let message: String
+
+        /// Creates a connector-error view model.
+        public init(
+            connectorId: ConnectorID,
+            connectorDisplay: String,
+            kind: ConnectorErrorSummary.Kind,
+            message: String
+        ) {
+            self.connectorId = connectorId
+            self.connectorDisplay = connectorDisplay
+            self.kind = kind
+            self.message = message
+        }
+    }
+}
