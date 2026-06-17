@@ -1,0 +1,36 @@
+[package]
+name = "daybrief"
+version = "0.0.0"
+description = "Local-first daily brief, menu-bar resident."
+authors = ["Daybrief contributors"]
+license = "AGPL-3.0-or-later"
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "daybrief_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-http = "2"
+tauri-plugin-autostart = "2"
+tauri-plugin-notification = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# SQLCipher gives us encryption-at-rest (SPEC.md §11); vendored OpenSSL keeps the
+# build self-contained across platforms.
+rusqlite = { version = "0.32", features = ["bundled-sqlcipher-vendored-openssl"] }
+# OS keychain for tokens + the DB encryption key (SPEC.md §11).
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
+directories = "5"
+chrono = { version = "0.4", features = ["clock"] }
+rand = "0.8"
+thiserror = "1"
+
+[features]
+# This feature is used for production builds where `tauri build` runs the bundler.
+custom-protocol = ["tauri/custom-protocol"]
