@@ -18,6 +18,9 @@ import SwiftUI
 public struct BriefPanelView: View {
     @State private var model: AppModel
     @Environment(\.openWindow) private var openWindow
+    /// The measured natural height of the current edition's content, used to size the
+    /// panel to its content (capped at ``maxEditionHeight``).
+    @State private var editionHeight: CGFloat = 0
 
     public init(model: AppModel) {
         self.model = model
@@ -207,12 +210,19 @@ public struct BriefPanelView: View {
         .padding(.top, 16)
         .padding(.bottom, 22)
 
-        // Size to content, but cap a long edition and scroll within the cap.
-        return ViewThatFits(in: .vertical) {
+        // Size the panel to the edition's measured content height, capped so a long
+        // brief scrolls within the cap. A plain ScrollView/ViewThatFits collapses to
+        // zero inside a self-sizing menu-bar popover (it gets no height proposal), so
+        // we measure the content and set the height explicitly.
+        return ScrollView {
             editionBody
-            ScrollView { editionBody }
+                .onGeometryChange(for: CGFloat.self) { proxy in
+                    proxy.size.height
+                } action: { height in
+                    editionHeight = height
+                }
         }
-        .frame(maxHeight: Self.maxEditionHeight)
+        .frame(height: editionHeight == 0 ? Self.maxEditionHeight : min(editionHeight, Self.maxEditionHeight))
     }
 
     /// The intentional, calm "quiet day" state: a brief exists but holds no
