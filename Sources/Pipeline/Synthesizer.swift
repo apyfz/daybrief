@@ -24,7 +24,7 @@ public struct Synthesizer: Sendable {
     private let clock: any Clock<Duration>
 
     /// The default budget for a single synthesis model call before it is abandoned.
-    public static let defaultSynthesisTimeout: Duration = .seconds(60)
+    public static let defaultSynthesisTimeout: Duration = .seconds(120)
 
     /// Creates a synthesizer.
     ///
@@ -104,8 +104,25 @@ public struct Synthesizer: Sendable {
             throw CancellationError()
         } catch let error as LLMError {
             throw PipelineError.synthesisFailed(reason: error.displayReason)
+        } catch let error as URLError {
+            // A raw network error reaching the model service — give it a human reason
+            // instead of leaking "NSURLError".
+            let reason: String
+            switch error.code {
+            case .timedOut:
+                reason = "the AI service took too long to respond — try again, or pick a faster model"
+            case .notConnectedToInternet:
+                reason = "there's no internet connection"
+            case .networkConnectionLost:
+                reason = "the network connection dropped — try again"
+            case .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed:
+                reason = "couldn't reach the AI service — check your connection"
+            default:
+                reason = "a network error reaching the AI service (code \(error.code.rawValue))"
+            }
+            throw PipelineError.synthesisFailed(reason: reason)
         } catch {
-            throw PipelineError.synthesisFailed(reason: "\(type(of: error))")
+            throw PipelineError.synthesisFailed(reason: error.localizedDescription)
         }
 
         // Provenance for the colophon is computed at assembly, never by the model.

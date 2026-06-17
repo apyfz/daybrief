@@ -11,6 +11,10 @@ enum RequestBuilder {
     ) throws -> URLRequest {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
+        // LLM completions can be slow (large prompts, reasoning models). Use a generous
+        // timeout so URLSession's 60s default doesn't preempt the pipeline's own
+        // synthesis budget with a raw URLError.
+        request.timeoutInterval = 150
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         for (key, value) in headers {
             request.setValue(value, forHTTPHeaderField: key)
