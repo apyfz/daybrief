@@ -29,6 +29,9 @@ public struct BriefPanelView: View {
 
     /// The fixed panel width — a single column, like a printed page.
     private let panelWidth: CGFloat = 380
+    /// Cap the edition's height so a long brief scrolls instead of overflowing the
+    /// screen; shorter editions (e.g. a quiet day) let the panel shrink to fit.
+    private static let maxEditionHeight: CGFloat = 600
 
     public var body: some View {
         VStack(spacing: 0) {
@@ -37,7 +40,6 @@ public struct BriefPanelView: View {
             content
         }
         .frame(width: panelWidth)
-        .frame(maxHeight: 620)
         .background(panelSurface)
         .tint(DaybriefTheme.accent)
     }
@@ -133,13 +135,11 @@ public struct BriefPanelView: View {
 
     // MARK: - The edition
 
-    @ViewBuilder
     private func edition(for brief: Brief) -> some View {
         let vm = BriefRenderer().viewModel(brief)
         let ctaLabels = ctaLabelMap(brief)
 
-        ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
+        let editionBody = VStack(alignment: .leading, spacing: 22) {
                 BriefHeroHeaderView(
                     hero: brief.hero,
                     masthead: brief.masthead.isEmpty ? mastheadForToday(brief.generatedAt) : brief.masthead,
@@ -181,7 +181,13 @@ public struct BriefPanelView: View {
             .padding(.horizontal, 18)
             .padding(.top, 16)
             .padding(.bottom, 22)
+
+        // Size to content, but cap a long edition and scroll within the cap.
+        return ViewThatFits(in: .vertical) {
+            editionBody
+            ScrollView { editionBody }
         }
+        .frame(maxHeight: Self.maxEditionHeight)
     }
 
     /// The intentional, calm "quiet day" state: a brief exists but holds no
