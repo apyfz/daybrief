@@ -26,13 +26,19 @@ public struct BriefRepository: Sendable {
 
     /// Persists the normalized items a brief was synthesized from, linking each
     /// to `briefID`. Existing items for that brief are replaced.
+    ///
+    /// Uses `save` (upsert) rather than `insert`: item ids are **stable across briefs**
+    /// (e.g. Slack derives a deterministic id per message), so a persistent unread item
+    /// reappears in successive briefs with the same primary key. `insert` collided with
+    /// the prior brief's row (a `DatabaseError` that surfaced as "the brief could not be
+    /// saved"); upsert re-links the item to the latest brief instead.
     public func saveItems(_ items: [BriefItem], briefID: UUID) async throws {
         let key = briefID.uuidString
         let records = try items.map { try BriefItemRecord($0, briefID: briefID) }
         try await queue.write { db in
             try BriefItemRecord.filter(Column("brief_id") == key).deleteAll(db)
             for record in records {
-                try record.insert(db)
+                try record.save(db)
             }
         }
     }

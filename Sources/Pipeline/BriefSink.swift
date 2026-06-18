@@ -53,7 +53,9 @@ public struct RepositoryBriefSink: BriefSink {
             let day = calendar.startOfDay(for: brief.generatedAt)
             try await settings.setDate(day, forKey: SettingsStore.lastBriefDateKey)
         } catch {
-            throw PipelineError.persistenceFailed(reason: "\(type(of: error))")
+            // Surface the underlying detail (e.g. the SQLite message) rather than just the
+            // error type, which was uselessly opaque ("DatabaseError") when a save failed.
+            throw PipelineError.persistenceFailed(reason: "\(error)")
         }
     }
 }

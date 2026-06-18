@@ -230,6 +230,36 @@ struct RepositoryRoundTripTests {
         #expect(try await repo.items(forBriefID: brief.id).isEmpty)
     }
 
+    @Test("A stable item id reappearing in a later brief upserts instead of colliding")
+    func briefItemsUpsertAcrossBriefs() async throws {
+        let manager = try DatabaseManager.inMemory()
+        let repo = BriefRepository(queue: manager.queue)
+
+        let briefA = makeBrief()
+        let briefB = Brief(
+            generatedAt: briefA.generatedAt.addingTimeInterval(86_400),
+            sections: [BriefSection(title: "Today", entries: [BriefEntry(headline: "Ship it")])]
+        )
+        try await repo.save(briefA)
+        try await repo.save(briefB)
+
+        // A persistent unread item with a STABLE id (as Slack derives per message) that
+        // surfaces in successive briefs. The old `insert` collided on the second save.
+        let stableID = UUID()
+        let unread = BriefItem(
+            id: stableID, source: .slack, account: "workspace", space: "work",
+            type: .message, title: "Old unread DM",
+            timestamp: Date(timeIntervalSince1970: 1_750_000_000), urgencyHints: [.unread]
+        )
+
+        try await repo.saveItems([unread], briefID: briefA.id)
+        // Must not throw on the duplicate primary key — upsert re-links to the new brief.
+        try await repo.saveItems([unread], briefID: briefB.id)
+
+        #expect(try await repo.items(forBriefID: briefB.id).map(\.id) == [stableID])
+        #expect(try await repo.items(forBriefID: briefA.id).isEmpty)
+    }
+
     // MARK: - Space
 
     @Test("Space saves, looks up by key, and deletes")
