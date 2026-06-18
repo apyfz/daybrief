@@ -29,6 +29,11 @@ public final class SchedulerCoordinator {
     /// and arms the next daily timer.
     public func start() {
         registerWakeObserver()
+        // Re-arm immediately whenever the user changes the fire-time, so a new time
+        // takes effect without waiting for the old timer to fire or an app restart.
+        model.onScheduleChange { [weak self] in
+            self?.armNextTimer()
+        }
         Task { @MainActor in
             await self.model.onWakeOrLaunch()
             self.armNextTimer()

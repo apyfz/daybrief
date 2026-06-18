@@ -174,7 +174,9 @@ public final class AppModel {
         // off the wake/launch catch-up for the rest of the day instead of re-firing
         // (and re-spending on the LLM) on every wake. Success additionally stamps
         // `lastBriefDate` via the sink. Stamped as start-of-day to match the sink's
-        // timezone-stable day key.
+        // timezone-stable day key. We capture the prior stamp so a *cancelled* run
+        // (not a real attempt) can restore it and not suppress today's catch-up.
+        let priorAttempt = (try? await environment.settings.date(forKey: SettingsStore.lastBriefAttemptDateKey)) ?? nil
         await recordBriefAttempt()
 
         do {
@@ -207,7 +209,10 @@ public final class AppModel {
             setup = .ready
             WidgetSnapshotWriter.publish(brief)
         } catch is CancellationError {
-            // Quiet — a cancelled generation isn't an error to surface.
+            // Quiet — a cancelled generation isn't an error to surface. It also isn't a
+            // real attempt, so restore the prior stamp; otherwise wake/launch catch-up
+            // would back off for the rest of the day after a mid-flight cancel.
+            try? await environment.settings.setDate(priorAttempt, forKey: SettingsStore.lastBriefAttemptDateKey)
         } catch let error as PipelineError {
             lastError = error.displayMessage
             Self.logger.error("generateBriefNow failed: \(error.displayMessage, privacy: .public)")
@@ -608,9 +613,16 @@ public final class AppModel {
 
     /// Adds `account` to its connector's connection (creating the connection on first
     /// account), persisting the result.
+    ///
+    /// Dedupes by the account's stable `id`, not its `label`: Google connectors use a
+    /// fixed display label ("Gmail" / "Google Calendar"), so matching on label would let
+    /// a second Google account silently overwrite the first (and orphan its Keychain
+    /// secrets). Since each connect mints a fresh id, this appends — preserving Google's
+    /// multi-account support. (Slack stays single-workspace by clearing its prior account
+    /// before calling here.)
     private func upsertAccount(_ account: Account, connectorId: ConnectorID, connectionName: String) async throws {
         if var existing = connections.first(where: { $0.connectorId == connectorId }) {
-            var accounts = existing.accounts.filter { $0.label != account.label }
+            var accounts = existing.accounts.filter { $0.id != account.id }
             accounts.append(account)
             existing = Connection(
                 id: existing.id,
@@ -633,7 +645,20 @@ public final class AppModel {
 
     // MARK: - Schedule + launch
 
-    /// Persists the daily brief fire-time.
+    /// Invoked whenever the brief fire-time changes so the live scheduler can re-arm its
+    /// one-shot timer immediately. Registered by ``SchedulerCoordinator`` on start; `nil`
+    /// before then (e.g. in tests / previews). `@ObservationIgnored` — it's plumbing, not
+    /// view state.
+    @ObservationIgnored private var rescheduleHandler: (@MainActor () -> Void)?
+
+    /// Registers a handler the model calls when the fire-time changes, so the scheduler
+    /// re-arms without waiting for the next fire or an app restart.
+    public func onScheduleChange(_ handler: @escaping @MainActor () -> Void) {
+        rescheduleHandler = handler
+    }
+
+    /// Persists the daily brief fire-time and re-arms the live scheduler so the change
+    /// takes effect immediately (not only after the next fire / restart).
     public func setBriefTime(_ time: FireTime) async {
         briefTime = time
         do {
@@ -641,6 +666,7 @@ public final class AppModel {
         } catch {
             Self.logger.error("setBriefTime failed: \(error.localizedDescription, privacy: .public)")
         }
+        rescheduleHandler?()
     }
 
     /// Toggles launch-at-login via `SMAppService`, then re-reads the live status.

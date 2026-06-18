@@ -163,29 +163,42 @@ public struct GmailConnector: Connector {
         guard !ids.isEmpty else { return [] }
         let cap = min(maxInFlightGets, ids.count)
 
-        return try await withThrowingTaskGroup(of: (Int, GmailMessage).self) { group in
+        return try await withThrowingTaskGroup(of: (Int, GmailMessage?).self) { group in
             var next = 0
             // Prime the pump with `cap` tasks, then add one more each time a child finishes —
             // this keeps at most `cap` `messages.get` calls in flight at any instant.
             while next < cap {
                 let index = next
                 let id = ids[index]
-                group.addTask { try (index, await self.fetchMessage(id: id, token: token)) }
+                group.addTask { (index, await self.fetchMessageQuietly(id: id, token: token)) }
                 next += 1
             }
 
-            var results: [(Int, GmailMessage)] = []
+            var results: [(Int, GmailMessage?)] = []
             results.reserveCapacity(ids.count)
             while let finished = try await group.next() {
                 results.append(finished)
                 if next < ids.count {
                     let index = next
                     let id = ids[index]
-                    group.addTask { try (index, await self.fetchMessage(id: id, token: token)) }
+                    group.addTask { (index, await self.fetchMessageQuietly(id: id, token: token)) }
                     next += 1
                 }
             }
-            return results.sorted { $0.0 < $1.0 }.map(\.1)
+            // Drop messages that failed individually so one bad/deleted message doesn't
+            // fail the whole inbox fetch.
+            return results.sorted { $0.0 < $1.0 }.compactMap(\.1)
+        }
+    }
+
+    /// Fetches one message, swallowing (and logging) a per-message failure so a single
+    /// transient error or deleted message doesn't abort the entire Gmail fetch.
+    private func fetchMessageQuietly(id: String, token: String) async -> GmailMessage? {
+        do {
+            return try await fetchMessage(id: id, token: token)
+        } catch {
+            Self.logger.error("Gmail message fetch failed: \(error.localizedDescription, privacy: .public)")
+            return nil
         }
     }
 

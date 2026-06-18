@@ -230,6 +230,13 @@ public actor LoopbackRedirectListener {
             }
             finish(with: .failure(mapped))
         case .cancelled:
+            // If we were cancelled before the port bound, the bind continuation was never
+            // resolved — resume it here so `start()` can't hang forever (continuation leak).
+            if !didResolveBind {
+                didResolveBind = true
+                bindContinuation?.resume(throwing: CancellationError())
+                bindContinuation = nil
+            }
             // Only surfaces as an error if no redirect was captured first.
             if !isFinished {
                 finish(with: .failure(ConnectorError.invalidRedirect(reason: "listener cancelled before redirect")))
