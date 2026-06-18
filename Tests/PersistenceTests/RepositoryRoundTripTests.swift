@@ -144,6 +144,51 @@ struct RepositoryRoundTripTests {
         #expect(try #require(try await repo.loadLatest()) == edited)
     }
 
+    @Test("Brief round-trip preserves the editorial chrome (masthead, lede, lead, mood, hero)")
+    func briefPreservesEditorialChrome() async throws {
+        let manager = try DatabaseManager.inMemory()
+        let repo = BriefRepository(queue: manager.queue)
+
+        // A fully-formed editorial brief — the in-memory shape after generation. Before
+        // the full-Brief JSON column, masthead/lede/lead/mood/hero were dropped on save,
+        // so a reloaded brief (and the widget snapshot built from it) lost them.
+        let brief = Brief(
+            generatedAt: Date(timeIntervalSince1970: 1_750_000_500),
+            masthead: "The Thursday Brief",
+            lede: "A steady morning with one thing worth your attention.",
+            lead: BriefEntry(
+                headline: "Sign off on the Q3 plan",
+                detail: "Jesse is blocked on your approval.",
+                url: URL(string: "https://example.com/q3"),
+                priority: 1
+            ),
+            mood: .steady,
+            hero: HeroArtwork(
+                assetName: "pissarro-tuileries-winter",
+                title: "The Tuileries Gardens, Winter Afternoon",
+                artist: "Camille Pissarro",
+                year: "1899",
+                accentHex: "#C9A227"
+            ),
+            sections: [BriefSection(title: "Later", entries: [BriefEntry(headline: "Standup at 10:00")])],
+            signalsRead: 14,
+            sources: [.gmail, .gcal]
+        )
+
+        try await repo.save(brief)
+        let reloaded = try #require(try await repo.loadLatest())
+
+        // The whole value round-trips, not just sections + connectorErrors.
+        #expect(reloaded == brief)
+        #expect(reloaded.masthead == "The Thursday Brief")
+        #expect(reloaded.lede.isEmpty == false)
+        #expect(reloaded.lead?.headline == "Sign off on the Q3 plan")
+        #expect(reloaded.mood == .steady)
+        #expect(reloaded.hero?.accentHex == "#C9A227")
+        #expect(reloaded.signalsRead == 14)
+        #expect(reloaded.sources == [.gmail, .gcal])
+    }
+
     @Test("Brief items round-trip and link to their brief, cascading on delete")
     func briefItemsCRUD() async throws {
         let manager = try DatabaseManager.inMemory()

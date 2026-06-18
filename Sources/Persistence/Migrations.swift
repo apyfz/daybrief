@@ -98,4 +98,22 @@ enum Migrations {
             }
         }
     }
+
+    /// Adds `briefs.brief_json`: the **full** ``Brief`` encoded as JSON.
+    ///
+    /// The v1 row stored only `sections_json` + `connector_errors_json`, so a
+    /// reloaded brief lost its masthead, lede, lead story, mood, and hero — the
+    /// editorial chrome lives only in the in-memory ``Brief`` after generation.
+    /// Persisting the whole value makes the round-trip lossless, so the brief panel
+    /// (and the desktop widget snapshot) keep their full editorial form across app
+    /// restarts. Nullable so pre-v2 rows decode via ``BriefRecord/toCore()``'s
+    /// legacy fallback. The v1 columns are kept (and still written) for ordering
+    /// (`generated_at`) and back-compat.
+    static func registerV2(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("v2-full-brief-json") { db in
+            try db.alter(table: "briefs") { t in
+                t.add(column: "brief_json", .text)
+            }
+        }
+    }
 }

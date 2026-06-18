@@ -2,18 +2,24 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <!--
-  Minimal entitlements for an UNSANDBOXED local development build.
+  Entitlements for the UNSANDBOXED menu-bar host app.
 
-  Daybrief ships as a Developer-ID, unsandboxed menu-bar app (it needs a
-  loopback HTTP listener for the Google OAuth PKCE flow, which the App Sandbox
-  network-server entitlement does not cover for arbitrary 127.0.0.1 ports, plus
-  unrestricted Keychain + Application Support access). The App Sandbox key is
-  therefore intentionally absent (defaults to off).
+  Daybrief ships as a Developer-ID, unsandboxed menu-bar app (it needs a loopback
+  HTTP listener for the Google OAuth PKCE flow, which the App Sandbox network-server
+  entitlement does not cover for arbitrary 127.0.0.1 ports, plus unrestricted
+  Keychain + Application Support access). The App Sandbox key is therefore
+  intentionally absent (defaults to off).
 
-  Hardened Runtime + the associated entitlements (e.g.
-  com.apple.security.cs.allow-jit if ever needed) and notarization are a later
-  release task — see docs/build. This dev build is signed ad-hoc / unsigned.
+  The one capability added is the App Group: the host writes a small, display-safe
+  brief snapshot into the shared group container so the SANDBOXED widget extension
+  (which can read nothing else) can render today's brief. The group id is team-
+  prefixed at build time via $(DAYBRIEF_APP_GROUP) → $(TeamIdentifierPrefix)…, so no
+  literal team ID is committed. See docs/build/widget.md.
 -->
 <dict>
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>$(DAYBRIEF_APP_GROUP)</string>
+	</array>
 </dict>
 </plist>

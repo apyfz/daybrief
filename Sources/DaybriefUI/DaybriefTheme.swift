@@ -33,6 +33,10 @@ public enum DaybriefTheme {
     private static let tiemposRegularName = "TiemposText-Regular"
     /// The PostScript name of the bundled italic editorial serif.
     private static let tiemposItalicName = "TiemposText-RegularItalic"
+    /// The PostScript name of the bundled body sans (Geist, regular weight).
+    private static let geistRegularName = "Geist-Regular"
+    /// The PostScript name of the bundled body sans (Geist, medium weight).
+    private static let geistMediumName = "Geist-Medium"
 
     /// Guards ``registerBundledFonts()`` so the registration only ever runs once,
     /// no matter how many times (or how early) callers invoke it.
@@ -65,6 +69,17 @@ public enum DaybriefTheme {
         registerBundledFonts()
         #if canImport(AppKit)
             return NSFont(name: tiemposRegularName, size: 12) != nil
+        #else
+            return false
+        #endif
+    }()
+
+    /// Whether the bundled Geist sans is available, computed once after registering
+    /// the bundled fonts. Drives ``sansBody(_:)`` / ``sansMedium(_:)`` fallback.
+    private static let geistAvailable: Bool = {
+        registerBundledFonts()
+        #if canImport(AppKit)
+            return NSFont(name: geistRegularName, size: 12) != nil
         #else
             return false
         #endif
@@ -107,6 +122,28 @@ public enum DaybriefTheme {
             return .custom(tiemposItalicName, size: size, relativeTo: .body)
         }
         return .system(size: size, design: .serif).italic()
+    }
+
+    /// The body-copy sans (Geist) at `size`, for the running context paragraphs
+    /// where a clean humanist sans reads more easily than the serif at small sizes
+    /// (the headlines, masthead, lede, and section titles stay in the serif).
+    ///
+    /// Prefers the bundled Geist (scaled relative to `.body`); otherwise falls back to
+    /// the regular system sans, so nothing has to be bundled.
+    public static func sansBody(_ size: CGFloat) -> Font {
+        if geistAvailable {
+            return .custom(geistRegularName, size: size, relativeTo: .body)
+        }
+        return .system(size: size, weight: .regular, design: .default)
+    }
+
+    /// The medium-weight body sans (Geist Medium) at `size`, for emphasis within body
+    /// copy (e.g. link labels). Falls back to the system sans at `.medium` weight.
+    public static func sansMedium(_ size: CGFloat) -> Font {
+        if geistAvailable {
+            return .custom(geistMediumName, size: size, relativeTo: .body)
+        }
+        return .system(size: size, weight: .medium, design: .default)
     }
 }
 
@@ -160,7 +197,22 @@ private struct PaperSheet: ViewModifier {
                     .fill(DaybriefTheme.paper)
             )
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            .shadow(color: DaybriefTheme.ink.opacity(0.10), radius: 12, y: 4)
+            // A bright top-to-bottom rim sheen so the opaque page reads as a glass-edged
+            // card floating on the Liquid Glass panel, not a flat rectangle.
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [.white.opacity(0.6), .white.opacity(0.04)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        lineWidth: 1
+                    )
+            )
+            // A deeper, softer float so the sheet sits clearly above the glass.
+            .shadow(color: DaybriefTheme.ink.opacity(0.13), radius: 18, y: 7)
+            .shadow(color: DaybriefTheme.ink.opacity(0.06), radius: 3, y: 1)
     }
 }
 

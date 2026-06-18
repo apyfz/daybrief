@@ -10,6 +10,10 @@ let package = Package(
         // The app target (Xcode project) links AppFeature, which transitively pulls the rest.
         .library(name: "AppFeature", targets: ["AppFeature"]),
         .library(name: "DaybriefCore", targets: ["DaybriefCore"]),
+        // GRDB-free presentation layer (palette, type scale, fonts, editorial chrome).
+        // Linked by both AppFeature and the sandboxed desktop widget extension.
+        .library(name: "DaybriefUI", targets: ["DaybriefUI"]),
+        .library(name: "BriefRender", targets: ["BriefRender"]),
         .library(name: "Pipeline", targets: ["Pipeline"]),
         .library(name: "LLMKit", targets: ["LLMKit"]),
         .library(name: "ConnectorKit", targets: ["ConnectorKit"]),
@@ -45,6 +49,20 @@ let package = Package(
         .target(name: "LLMKit", dependencies: ["DaybriefCore"]),
         .target(name: "BriefRender", dependencies: ["DaybriefCore"]),
 
+        // MARK: - Presentation layer (GRDB-free; shared by the app + the widget)
+
+        .target(
+            name: "DaybriefUI",
+            dependencies: ["DaybriefCore"],
+            resources: [
+                // Ships the editorial serif (Tiempos Text) + body sans (Geist) in
+                // `Bundle.module/Fonts`. Tiempos is git-ignored (licensed), so the
+                // folder may hold only Geist in CI — `DaybriefTheme.registerBundledFonts()`
+                // and the type APIs fall back to the system serif gracefully.
+                .copy("Fonts"),
+            ]
+        ),
+
         // MARK: - Orchestration
 
         .target(
@@ -57,15 +75,8 @@ let package = Package(
         .target(
             name: "AppFeature",
             dependencies: [
-                "DaybriefCore", "Pipeline", "Persistence", "Secrets", "LLMKit", "BriefRender",
+                "DaybriefCore", "DaybriefUI", "Pipeline", "Persistence", "Secrets", "LLMKit", "BriefRender",
                 "ConnectorKit", "GoogleCalendarConnector", "GmailConnector", "SlackConnector",
-            ],
-            resources: [
-                // Ships the editorial serif (Tiempos Text) in `Bundle.module/Fonts` when
-                // the licensed `.ttf` files are present locally. They are git-ignored, so
-                // the folder may be empty in CI — `DaybriefTheme.registerBundledFonts()`
-                // and the type APIs fall back to the system serif gracefully.
-                .copy("Fonts"),
             ]
         ),
 
@@ -73,7 +84,7 @@ let package = Package(
 
         .executableTarget(
             name: "DaybriefSnapshot",
-            dependencies: ["AppFeature", "DaybriefCore", "BriefRender"]
+            dependencies: ["AppFeature", "DaybriefCore", "DaybriefUI", "BriefRender"]
         ),
 
         // MARK: - Tests

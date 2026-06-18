@@ -21,7 +21,33 @@ struct LLMErrorTests {
     @Test("Other HTTP statuses keep the generic code message")
     func otherStatusesUnchanged() {
         #expect(LLMError.httpStatus(code: 500, body: "boom").displayReason == "the model service returned HTTP 500")
-        #expect(LLMError.httpStatus(code: 429, body: "slow down").displayReason == "the model service returned HTTP 429")
+        #expect(LLMError.httpStatus(code: 503, body: "down").displayReason == "the model service returned HTTP 503")
+    }
+
+    @Test("A data-policy failure points at the OpenRouter privacy settings")
+    func dataPolicyGuidance() {
+        let reason = LLMError.httpStatus(code: 404, body: "No endpoints found matching your data policy").displayReason
+        #expect(reason.contains("openrouter.ai/settings/privacy"))
+        // Curated guidance, never the raw body.
+        #expect(!reason.contains("No endpoints found"))
+    }
+
+    @Test("A credits failure points at adding credits")
+    func creditsGuidance() {
+        #expect(LLMError.httpStatus(code: 402, body: "Insufficient credits").displayReason.contains("openrouter.ai/credits"))
+        #expect(LLMError.httpStatus(code: 403, body: "This request requires more credits").displayReason.contains("openrouter.ai/credits"))
+    }
+
+    @Test("A schema-incapable model is called out as such")
+    func schemaGuidance() {
+        let reason = LLMError.httpStatus(code: 404, body: "No endpoints found that support response_format").displayReason
+        #expect(reason.contains("structured output"))
+    }
+
+    @Test("Rate-limited free pools get a try-again / go-paid hint")
+    func rateLimitGuidance() {
+        let reason = LLMError.httpStatus(code: 429, body: "rate limited").displayReason
+        #expect(reason.contains("rate-limited"))
     }
 
     @Test("Non-HTTP cases keep their existing reasons")

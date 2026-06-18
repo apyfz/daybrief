@@ -186,7 +186,8 @@ extension PromptTemplate {
     - Group calendar items under one dated section; group what slipped or is unread \
     under another. Do not create a section for a category with nothing in it.
     - Headlines are short and concrete (a verb where natural). Context paragraphs are \
-    two to four sentences, naming the people and threads involved.
+    tight: one or two sentences (never more), naming the people and threads involved. \
+    Lead with what matters; cut hedging, throat-clearing, and generic safety caveats.
     - Set a ctaLabel only on entries the reader can act on; keep it to a few words.
     """
 }

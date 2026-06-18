@@ -34,10 +34,12 @@ struct BriefEntryView: View {
                 .padding(.trailing, 20)
 
             if let detail = entry.detail {
+                // Body copy is set in the Geist sans (the headline stays serif), with a
+                // little extra leading so the paragraph reads easily.
                 Text(detail)
-                    .font(DaybriefTheme.serifBody(13))
+                    .font(DaybriefTheme.sansBody(11.5))
                     .foregroundStyle(DaybriefTheme.inkSecondary)
-                    .lineSpacing(3)
+                    .lineSpacing(1)
                     .fixedSize(horizontal: false, vertical: true)
             }
 

@@ -11,21 +11,17 @@ struct BriefTimeStep: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .center, spacing: 16) {
-                DatePicker(
-                    "",
-                    selection: timeBinding,
-                    displayedComponents: .hourAndMinute
-                )
-                .datePickerStyle(.field)
-                .labelsHidden()
-                .font(DaybriefTheme.serifBody(18))
-
-                Text(model.briefTime.encoded)
+            HStack(alignment: .center, spacing: 10) {
+                // The big editable time: large serif hour/minute, each adjustable via its
+                // own stepper — keeps the prominent display the reader liked, but editable
+                // (the compact `.field` picker rendered far too small).
+                TimeUnitStepper(value: hourBinding, range: 0 ... 23)
+                Text(":")
                     .font(DaybriefTheme.serifDisplay(40))
                     .foregroundStyle(DaybriefTheme.ink)
-                    .monospacedDigit()
+                TimeUnitStepper(value: minuteBinding, range: 0 ... 59)
             }
+            .frame(maxWidth: .infinity, alignment: .center)
             .padding(18)
             .background(.white.opacity(0.45), in: RoundedRectangle(cornerRadius: 14))
             .overlay(
@@ -45,25 +41,38 @@ struct BriefTimeStep: View {
         }
     }
 
-    /// Bridges the `FireTime` (hour/minute) to the `Date` `DatePicker` expects,
-    /// pinning the date portion to today so only the time matters.
-    private var timeBinding: Binding<Date> {
-        Binding<Date>(
-            get: {
-                let calendar = Calendar.current
-                return calendar.date(
-                    bySettingHour: model.briefTime.hour,
-                    minute: model.briefTime.minute,
-                    second: 0,
-                    of: Date()
-                ) ?? Date()
-            },
-            set: { newDate in
-                let parts = Calendar.current.dateComponents([.hour, .minute], from: newDate)
-                let time = FireTime(hour: parts.hour ?? 7, minute: parts.minute ?? 0)
-                model.briefTime = time
-                Task { await model.setBriefTime(time) }
-            }
-        )
+    /// Reads/writes the brief hour, committing through the model.
+    private var hourBinding: Binding<Int> {
+        Binding(get: { model.briefTime.hour }, set: { commit(hour: $0, minute: model.briefTime.minute) })
+    }
+
+    /// Reads/writes the brief minute, committing through the model.
+    private var minuteBinding: Binding<Int> {
+        Binding(get: { model.briefTime.minute }, set: { commit(hour: model.briefTime.hour, minute: $0) })
+    }
+
+    /// Persists a new fire-time and reflects it immediately.
+    private func commit(hour: Int, minute: Int) {
+        let time = FireTime(hour: hour, minute: minute)
+        model.briefTime = time
+        Task { await model.setBriefTime(time) }
+    }
+}
+
+/// A large serif time unit (hour or minute) with a stepper, so the prominent time
+/// display is also editable. Renders zero-padded ("07", "05") and clamps to `range`.
+private struct TimeUnitStepper: View {
+    @Binding var value: Int
+    let range: ClosedRange<Int>
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(String(format: "%02d", value))
+                .font(DaybriefTheme.serifDisplay(40))
+                .monospacedDigit()
+                .foregroundStyle(DaybriefTheme.ink)
+            Stepper("", value: $value, in: range)
+                .labelsHidden()
+        }
     }
 }

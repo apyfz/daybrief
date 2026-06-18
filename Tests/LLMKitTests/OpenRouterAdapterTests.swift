@@ -109,12 +109,48 @@ struct OpenRouterAdapterTests {
         let models = try await adapter.availableModels()
 
         #expect(models.count == 2)
-        #expect(models[0] == ModelInfo(id: "anthropic/claude-opus-4-8", displayName: "Claude Opus 4.8", contextLength: 200_000))
-        #expect(models[1] == ModelInfo(id: "openai/gpt-5", displayName: "GPT-5", contextLength: nil))
+        // Both are recommended families (claude-opus, gpt-5) and carry no pricing → not free.
+        #expect(models[0] == ModelInfo(id: "anthropic/claude-opus-4-8", displayName: "Claude Opus 4.8", contextLength: 200_000, isRecommended: true))
+        #expect(models[1] == ModelInfo(id: "openai/gpt-5", displayName: "GPT-5", contextLength: nil, isRecommended: true))
 
         let request = try #require(await transport.recordedRequests.first)
         #expect(request.url?.absoluteString == "https://openrouter.ai/api/v1/models")
         #expect(request.httpMethod == "GET")
+    }
+
+    @Test("availableModels filters dead entries and tags free / recommended")
+    func availableModelsFiltersAndTags() async throws {
+        let transport = MockHTTPTransport()
+        let body = #"""
+        {"data":[
+          {"id":"anthropic/claude-sonnet-4.5","name":"Claude Sonnet 4.5","pricing":{"prompt":"0.000003"},"supported_parameters":["response_format","tools"],"architecture":{"output_modalities":["text"]}},
+          {"id":"deepseek/deepseek-r1:free","name":"DeepSeek R1 (free)","pricing":{"prompt":"0"},"supported_parameters":["response_format"],"architecture":{"output_modalities":["text"]}},
+          {"id":"black-forest/flux","name":"FLUX","architecture":{"output_modalities":["image"]}},
+          {"id":"some/chat-no-schema","name":"No Schema","pricing":{"prompt":"0.000001"},"supported_parameters":["tools","temperature"]},
+          {"id":"some/unknown-paid","name":"Unknown Paid","pricing":{"prompt":"0.000002"}}
+        ]}
+        """#
+        await transport.enqueue(data: Data(body.utf8))
+
+        let adapter = OpenRouterAdapter(apiKey: "k", defaultModel: "m", transport: transport)
+        let models = try await adapter.availableModels()
+        let byID = Dictionary(uniqueKeysWithValues: models.map { ($0.id, $0) })
+
+        // Image-only and schema-incapable models are dropped.
+        #expect(byID["black-forest/flux"] == nil)
+        #expect(byID["some/chat-no-schema"] == nil)
+
+        // Paid recommended family is kept, tagged recommended, not free.
+        #expect(byID["anthropic/claude-sonnet-4.5"]?.isRecommended == true)
+        #expect(byID["anthropic/claude-sonnet-4.5"]?.isFree == false)
+
+        // A :free model is kept but flagged free, and never recommended.
+        #expect(byID["deepseek/deepseek-r1:free"]?.isFree == true)
+        #expect(byID["deepseek/deepseek-r1:free"]?.isRecommended == false)
+
+        // An unknown paid model with no metadata is kept (benefit of the doubt) but not recommended.
+        #expect(byID["some/unknown-paid"]?.isRecommended == false)
+        #expect(byID["some/unknown-paid"]?.isFree == false)
     }
 
     @Test("attribution headers are attached when provided")

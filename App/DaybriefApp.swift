@@ -1,4 +1,5 @@
 import AppFeature
+import AppKit
 import SwiftUI
 
 /// The Daybrief app entry point: a menu-bar accessory whose `MenuBarExtra` hosts
@@ -63,10 +64,18 @@ struct DaybriefApp: App {
                     )
                 }
             }
-            .onAppear { NSApplication.shared.setActivationPolicy(.regular) }
+            .onAppear {
+                NSApplication.shared.setActivationPolicy(.regular)
+                // Register the window opener for the widget's daybrief:// deep link.
+                appDelegate.openMainWindow = { openWindow(id: Self.mainWindowID) }
+            }
             .onDisappear { NSApplication.shared.setActivationPolicy(.accessory) }
         }
         .windowResizability(.contentSize)
+        // The widget's daybrief:// deep link is handled in AppDelegate (it opens an
+        // interactive brief window); this stops SwiftUI from also auto-surfacing the
+        // settings window for that external event.
+        .handlesExternalEvents(matching: [])
         .commands {
             CommandGroup(replacing: .appSettings) {
                 Button("Daybrief Settings…") { openWindow(id: Self.mainWindowID) }

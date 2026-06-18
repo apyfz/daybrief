@@ -12,11 +12,25 @@ public struct ModelInfo: Sendable, Codable, Equatable, Identifiable {
     public let displayName: String?
     /// The model's maximum context length in tokens, when known.
     public let contextLength: Int?
+    /// Whether this is a free / `$0`-priced model. Kept available but flagged: free
+    /// models often 404 / rate-limit until the account enables a data-policy setting.
+    public let isFree: Bool
+    /// Whether this model is in the curated "reliable" set — drives the picker's
+    /// Recommended group and the default selection. Other adapters leave it `false`.
+    public let isRecommended: Bool
 
     /// Creates model metadata.
-    public init(id: String, displayName: String? = nil, contextLength: Int? = nil) {
+    public init(
+        id: String,
+        displayName: String? = nil,
+        contextLength: Int? = nil,
+        isFree: Bool = false,
+        isRecommended: Bool = false
+    ) {
         self.id = id
         self.displayName = displayName
         self.contextLength = contextLength
+        self.isFree = isFree
+        self.isRecommended = isRecommended
     }
 }

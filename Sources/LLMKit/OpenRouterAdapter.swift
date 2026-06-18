@@ -143,14 +143,62 @@ public struct OpenRouterAdapter: ModelAdapter {
         guard let data = json["data"]?.array else {
             throw LLMError.malformedResponse("OpenRouter /models had no `data` array")
         }
-        return data.compactMap { entry in
-            guard let id = entry["id"]?.string else { return nil }
-            return ModelInfo(
-                id: id,
-                displayName: entry["name"]?.string,
-                contextLength: entry["context_length"]?.int
-            )
+        return data.compactMap { Self.modelInfo(from: $0) }
+    }
+
+    /// Maps one `/models` entry to a ``ModelInfo``, dropping models that structurally
+    /// can't serve a Daybrief brief and tagging the rest.
+    ///
+    /// OpenRouter publishes its whole catalogue, but many entries 404 at call time.
+    /// We drop the ones we can prove won't work — models that can't output text
+    /// (image/audio/embedding) and models that can't honor a `response_format`
+    /// json_schema (Daybrief always sends one). A field that's *absent* gets the benefit
+    /// of the doubt rather than being filtered, to avoid over-pruning. Free / `$0`
+    /// models are **kept but flagged** (`isFree`) since the account may run free-tier;
+    /// recommended models are tagged from the curated ``ReliableModels`` set.
+    static func modelInfo(from entry: JSONValue) -> ModelInfo? {
+        guard let id = entry["id"]?.string else { return nil }
+
+        if let modalities = outputModalities(entry), !modalities.contains("text") {
+            return nil
         }
+        if let params = supportedParameters(entry),
+           !params.contains("response_format"), !params.contains("structured_outputs") {
+            return nil
+        }
+
+        let free = isFreePricing(entry) || id.lowercased().hasSuffix(":free")
+        let recommended = !free && ReliableModels.isRecommendedFamily(id)
+
+        return ModelInfo(
+            id: id,
+            displayName: entry["name"]?.string,
+            contextLength: entry["context_length"]?.int,
+            isFree: free,
+            isRecommended: recommended
+        )
+    }
+
+    /// The model's output modalities (lowercased), or `nil` when the field is absent.
+    private static func outputModalities(_ entry: JSONValue) -> [String]? {
+        let raw = entry["architecture"]?["output_modalities"]?.array
+            ?? entry["output_modalities"]?.array
+        guard let raw else { return nil }
+        let mods = raw.compactMap { $0.string?.lowercased() }
+        return mods.isEmpty ? nil : mods
+    }
+
+    /// The parameters the model's endpoints support (lowercased), or `nil` when absent.
+    private static func supportedParameters(_ entry: JSONValue) -> [String]? {
+        guard let raw = entry["supported_parameters"]?.array else { return nil }
+        let params = raw.compactMap { $0.string?.lowercased() }
+        return params.isEmpty ? nil : params
+    }
+
+    /// Whether the model is free (its per-token prompt price is zero).
+    private static func isFreePricing(_ entry: JSONValue) -> Bool {
+        guard let prompt = entry["pricing"]?["prompt"]?.string else { return false }
+        return (Double(prompt) ?? -1) == 0
     }
 
     // MARK: - Body construction

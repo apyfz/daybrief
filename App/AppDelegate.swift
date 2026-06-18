@@ -18,10 +18,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var scheduler: SchedulerCoordinator?
     private static let logger = Logger(subsystem: "co.daybrief.app", category: "AppDelegate")
 
+    /// Opens the main settings/onboarding window. Registered by ``DaybriefApp`` once the
+    /// SwiftUI scene is available.
+    var openMainWindow: (() -> Void)?
+
     /// Receives the app-owned model from ``DaybriefApp`` before launch completes.
     /// No-op if the environment failed to build (`model` is `nil`).
     func attach(model: AppModel?) {
         self.model = model
+    }
+
+    /// Handles the widget's `daybrief://` deep link. The widget is view-only, so a tap
+    /// simply brings the app forward — the reader acts from the menu-bar panel. (The
+    /// menu-bar popover can't be opened programmatically, so we don't force a window.)
+    func application(_: NSApplication, open urls: [URL]) {
+        guard urls.contains(where: { $0.scheme?.lowercased() == "daybrief" }) else { return }
+        NSApplication.shared.activate()
     }
 
     func applicationDidFinishLaunching(_: Notification) {

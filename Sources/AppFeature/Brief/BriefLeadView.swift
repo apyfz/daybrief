@@ -48,10 +48,12 @@ struct BriefLeadView: View {
                 .accessibilityAddTraits(.isHeader)
 
             if let detail = lead.detail {
+                // Body copy is set in the Geist sans (the headlines/lede stay serif),
+                // with a little extra leading so the paragraph reads easily.
                 Text(detail)
-                    .font(DaybriefTheme.serifBody(14))
+                    .font(DaybriefTheme.sansBody(12.5))
                     .foregroundStyle(DaybriefTheme.inkSecondary)
-                    .lineSpacing(3)
+                    .lineSpacing(1)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 8)
             }

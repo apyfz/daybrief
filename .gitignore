@@ -12,4 +12,4 @@ xcuserdata/
 *.xcuserstate
 
 # Commercial/trial font (Tiempos) — local only, not redistributable
-Sources/AppFeature/Fonts/TiemposText-*.ttf
+Sources/DaybriefUI/Fonts/TiemposText-*.ttf

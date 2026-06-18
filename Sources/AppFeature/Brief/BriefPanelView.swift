@@ -54,9 +54,9 @@ public struct BriefPanelView: View {
             // fallback the sheet is visually quiet (paper-on-paper with a soft edge).
             content
                 .paperSheet()
-                .padding(.horizontal, 10)
+                .padding(.horizontal, 12)
                 .padding(.top, 4)
-                .padding(.bottom, 10)
+                .padding(.bottom, 12)
         }
         .frame(width: panelWidth)
         .background(panelSurface)
@@ -284,11 +284,16 @@ public struct BriefPanelView: View {
     @ViewBuilder
     private var panelSurface: some View {
         if #available(macOS 26.0, *) {
-            // A clear backing carrying the glass material fills the window; the
-            // editorial content rides an opaque paper sheet on top (see `body`),
-            // so only the chrome / margins read as glass.
+            // A backing carrying the glass material fills the window; the editorial
+            // content rides an opaque paper sheet on top (see `body`), so only the
+            // chrome / margins read as glass. A faint warm tint makes the margins read
+            // as genuinely tinted Liquid Glass rather than near-clear, and `.interactive`
+            // lets the specular highlight track the pointer for the live-glass feel.
             Color.clear
-                .glassEffect(.regular, in: .rect(cornerRadius: 0))
+                .glassEffect(
+                    .regular.tint(DaybriefTheme.accent.opacity(0.07)).interactive(),
+                    in: .rect(cornerRadius: 0)
+                )
         } else {
             DaybriefTheme.paper
         }

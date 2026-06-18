@@ -23,13 +23,13 @@ struct DatabaseManagerTests {
         }
     }
 
-    @Test("the v1 migration is recorded as applied")
+    @Test("the schema migrations are recorded as applied")
     func migrationRecorded() async throws {
         let manager = try DatabaseManager.inMemory()
         let applied = try await manager.queue.read { db in
             try DatabaseManager.migrator.appliedMigrations(db)
         }
-        #expect(applied == ["v1"])
+        #expect(applied == ["v1", "v2-full-brief-json"])
     }
 
     @Test("opening a file-backed database creates and migrates it")
@@ -45,7 +45,7 @@ struct DatabaseManagerTests {
         let applied = try await manager.queue.read { db in
             try DatabaseManager.migrator.appliedMigrations(db)
         }
-        #expect(applied == ["v1"])
+        #expect(applied == ["v1", "v2-full-brief-json"])
     }
 
     @Test("requesting encryption on the default (plain GRDB) build throws")

@@ -350,6 +350,18 @@ private struct ModelSection: View {
     @State private var apiKey = ""
     @State private var isLoading = false
     @State private var savedNote: String?
+    @State private var showAllModels = false
+
+    /// The curated, reliable models (the picker leads with these).
+    private var recommendedModels: [ModelInfo] { models.filter(\.isRecommended) }
+    /// Everything else from the (already dead-entry-filtered) catalogue.
+    private var otherModels: [ModelInfo] { models.filter { !$0.isRecommended } }
+
+    /// One picker row, flagging free models so the cost/availability tradeoff is visible.
+    @ViewBuilder
+    private func modelRow(_ info: ModelInfo) -> some View {
+        Text((info.displayName ?? info.id) + (info.isFree ? " · free" : "")).tag(info.id)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -380,8 +392,15 @@ private struct ModelSection: View {
                             .lineLimit(1)
                     } else {
                         Picker("Model", selection: $model.selectedModel) {
-                            ForEach(models) { info in
-                                Text(info.displayName ?? info.id).tag(info.id)
+                            if !recommendedModels.isEmpty {
+                                Section("Recommended") {
+                                    ForEach(recommendedModels) { modelRow($0) }
+                                }
+                            }
+                            if showAllModels || recommendedModels.isEmpty {
+                                Section(recommendedModels.isEmpty ? "Models" : "All models") {
+                                    ForEach(otherModels) { modelRow($0) }
+                                }
                             }
                         }
                         .labelsHidden()
@@ -395,6 +414,20 @@ private struct ModelSection: View {
                     }
                     .disabled(isLoading)
                 }
+            }
+
+            if !recommendedModels.isEmpty, !otherModels.isEmpty {
+                Toggle("Show all models", isOn: $showAllModels)
+                    .toggleStyle(.checkbox)
+                    .font(.system(size: 12))
+                    .foregroundStyle(DaybriefTheme.inkSecondary)
+            }
+
+            if let selected = models.first(where: { $0.id == model.selectedModel }), selected.isFree {
+                Text("Free models can be rate-limited and may need prompt logging enabled in your OpenRouter privacy settings (openrouter.ai/settings/privacy).")
+                    .font(.system(size: 11))
+                    .foregroundStyle(DaybriefTheme.inkSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             if let savedNote {
@@ -423,8 +456,10 @@ private struct ModelSection: View {
             savedNote = model.lastError == nil ? "Key saved to your Keychain." : nil
         }
         models = await model.availableModels()
-        if model.selectedModel.isEmpty, let first = models.first {
-            model.selectedModel = first.id
+        // Seed a fresh setup with a known-good recommended model (not just whatever
+        // sorts first), falling back to the first available only if none are recommended.
+        if model.selectedModel.isEmpty, let preferred = models.first(where: \.isRecommended) ?? models.first {
+            model.selectedModel = preferred.id
             await model.persistSelectedModel()
         }
     }
@@ -448,15 +483,11 @@ private struct BriefScheduleSection: View {
 
     var body: some View {
         LabeledRow(label: "Brief time") {
-            HStack(spacing: 12) {
-                DatePicker("", selection: timeBinding, displayedComponents: .hourAndMinute)
-                    .datePickerStyle(.field)
-                    .labelsHidden()
-                Text(model.briefTime.encoded)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(DaybriefTheme.ink)
-                    .monospacedDigit()
-            }
+            // A single editable time control (the static duplicate display was removed).
+            DatePicker("", selection: timeBinding, displayedComponents: .hourAndMinute)
+                .datePickerStyle(.field)
+                .labelsHidden()
+                .font(.system(size: 14, weight: .semibold))
         }
     }
 

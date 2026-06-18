@@ -135,9 +135,10 @@ struct BriefErrorStateView: View {
                     .font(DaybriefTheme.serifDisplay(20))
                     .foregroundStyle(DaybriefTheme.ink)
                 Text(message)
-                    .font(DaybriefTheme.serifBody(13))
+                    .font(DaybriefTheme.sansBody(13))
                     .foregroundStyle(DaybriefTheme.inkSecondary)
                     .multilineTextAlignment(.center)
+                    .lineSpacing(4)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: 300)
             }

@@ -126,9 +126,15 @@ public final class AppModel {
         do {
             let config = try await providerConfig(model: selectedModel.isEmpty ? "placeholder" : selectedModel)
             let adapter = try environment.providerRegistry.makeAdapter(selectedProvider, config: config)
-            return try await adapter.availableModels()
+            // Sort alphabetically (by display name, falling back to id) so the long
+            // OpenRouter catalogue is easy to scan instead of arriving in API order.
+            return try await adapter.availableModels().sorted {
+                ($0.displayName ?? $0.id).localizedCaseInsensitiveCompare($1.displayName ?? $1.id) == .orderedAscending
+            }
         } catch {
-            lastError = "Could not load models — check your key and try again."
+            // Surface the precise, actionable reason (data-policy, credits, bad key, …)
+            // instead of swallowing every failure into a generic "check your key".
+            lastError = (error as? LLMError)?.displayReason ?? "Could not load models — check your key and try again."
             Self.logger.error("availableModels failed: \(error.localizedDescription, privacy: .public)")
             return []
         }
@@ -199,6 +205,7 @@ public final class AppModel {
             )
             currentBrief = brief
             setup = .ready
+            WidgetSnapshotWriter.publish(brief)
         } catch is CancellationError {
             // Quiet — a cancelled generation isn't an error to surface.
         } catch let error as PipelineError {
@@ -288,6 +295,7 @@ public final class AppModel {
             Self.logger.error("dismissEntry persistence failed: \(error.localizedDescription, privacy: .public)")
         }
         currentBrief = updated
+        WidgetSnapshotWriter.publish(updated)
     }
 
     // MARK: - Connecting tools
@@ -725,6 +733,9 @@ public final class AppModel {
 
     private func loadLatestBrief() async {
         currentBrief = (try? await environment.briefRepository.loadLatest()) ?? currentBrief
+        // Republish on launch so the widget reflects the persisted brief even if it was
+        // generated before this build (or the container was cleared).
+        WidgetSnapshotWriter.publish(currentBrief)
     }
 
     /// Persists `selectedModel` whenever the user picks a model. Call after binding.

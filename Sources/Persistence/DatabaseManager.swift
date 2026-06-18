@@ -106,6 +106,7 @@ public struct DatabaseManager: Sendable {
             migrator.eraseDatabaseOnSchemaChange = true
         #endif
         Migrations.registerV1(&migrator)
+        Migrations.registerV2(&migrator)
         return migrator
     }()
 }

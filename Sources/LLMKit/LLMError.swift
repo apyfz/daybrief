@@ -46,15 +46,8 @@ public extension LLMError {
             return "invalid base URL for \(provider)"
         case .requestEncodingFailed:
             return "the request could not be encoded"
-        case let .httpStatus(code, _):
-            switch code {
-            case 404:
-                return "the selected model isn't available on this provider — choose a different model in Settings"
-            case 401:
-                return "the AI key was rejected — re-enter it in Settings → AI model"
-            default:
-                return "the model service returned HTTP \(code)"
-            }
+        case let .httpStatus(code, body):
+            return Self.httpReason(code: code, body: body)
         case let .malformedResponse(detail):
             return detail
         case let .streamDecodingFailed(detail):
@@ -70,6 +63,37 @@ public extension LLMError {
 }
 
 extension LLMError {
+    /// Turns an HTTP failure into an actionable, secret-free reason.
+    ///
+    /// OpenRouter's error *body* states the actual fix (enable a data policy, add credits,
+    /// pick a schema-capable model), but the body can carry detail we don't want to echo
+    /// verbatim. So we pattern-match known phrases and return our own fixed guidance —
+    /// the body itself is never surfaced.
+    static func httpReason(code: Int, body: String) -> String {
+        let lower = body.lowercased()
+
+        if lower.contains("data policy") || lower.contains("data_policy") || lower.contains("no endpoints found matching your data policy") {
+            return "This model needs a data-policy setting enabled on your OpenRouter account. Open openrouter.ai/settings/privacy, allow prompt logging, then try again — or pick a different model in Settings."
+        }
+        if code == 402 || lower.contains("insufficient") || lower.contains("requires more credits") || lower.contains("can only afford") || lower.contains("add more credits") {
+            return "Your OpenRouter account doesn't have enough credit for this model. Add credits at openrouter.ai/credits, or choose a cheaper model in Settings."
+        }
+        if lower.contains("no endpoints found that support") || lower.contains("response_format") || lower.contains("structured output") {
+            return "The selected model can't produce the structured output Daybrief needs — choose a different model in Settings."
+        }
+
+        switch code {
+        case 401:
+            return "the AI key was rejected — re-enter it in Settings → AI model"
+        case 404:
+            return "the selected model isn't available on this provider — choose a different model in Settings"
+        case 429:
+            return "the model is rate-limited right now (free models share a busy pool) — try again in a moment, or pick a paid model in Settings"
+        default:
+            return "the model service returned HTTP \(code)"
+        }
+    }
+
     /// Maps a ``TransportError`` from the injected transport into the matching ``LLMError``.
     static func from(_ transportError: TransportError) -> LLMError {
         switch transportError {
