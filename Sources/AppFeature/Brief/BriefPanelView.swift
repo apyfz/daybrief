@@ -62,7 +62,10 @@ public struct BriefPanelView: View {
     /// hero, or no curated/parsable hex (design §brief-design-language, "per-edition
     /// accent").
     private var accent: Color {
-        model.currentBrief?.hero?.accentHex.flatMap(Color.init(hex:)) ?? DaybriefTheme.accent
+        // Per-edition painting accents hurt legibility on busy art and dark glass
+        // (e.g. a muddy olive on the Cézanne), so the brief uses the consistent golden
+        // accent for the masthead and CTAs instead.
+        DaybriefTheme.accent
     }
 
     // MARK: - Header bar
@@ -123,7 +126,9 @@ public struct BriefPanelView: View {
     private func headerIcon(_ name: String, size: CGFloat, weight: Font.Weight) -> some View {
         Image(systemName: name)
             .font(.system(size: size, weight: weight))
-            .foregroundStyle(DaybriefTheme.inkSecondary)
+            // .primary adapts for contrast on both the glass buttons (macOS 26) and the
+            // plain paper fallback — inkSecondary was invisible on the glass material.
+            .foregroundStyle(.primary)
             .frame(width: 22, height: 22)
             .contentShape(Rectangle())
     }
@@ -166,9 +171,9 @@ public struct BriefPanelView: View {
     private func edition(for brief: Brief) -> some View {
         let vm = BriefRenderer().viewModel(brief)
         let ctaLabels = ctaLabelMap(brief)
-        // Color this edition by its own painting (passed through ``BriefViewModel``),
-        // independent of which brief is "current".
-        let editionAccent = vm.accentHex.flatMap(Color.init(hex:)) ?? DaybriefTheme.accent
+        // Consistent golden accent for legibility (see `accent`); per-edition painting
+        // colors were too low-contrast for the masthead/CTAs.
+        let editionAccent = DaybriefTheme.accent
 
         let editionBody = VStack(alignment: .leading, spacing: 22) {
             BriefHeroHeaderView(

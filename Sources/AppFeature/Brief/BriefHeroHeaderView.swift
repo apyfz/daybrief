@@ -27,13 +27,19 @@ struct BriefHeroHeaderView: View {
                         .frame(height: 188)
                         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                         .overlay(
-                            // A soft top-and-bottom scrim so the golden masthead
-                            // reads cleanly over a bright painting.
-                            LinearGradient(
-                                colors: [.black.opacity(0.28), .clear, .black.opacity(0.18)],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
+                            // An always-on darkening overlay so the golden masthead reads
+                            // cleanly over ANY painting — including busy mid-tone ones
+                            // (e.g. the Cézanne) where a top/bottom-only scrim left the
+                            // center too bright. A uniform tint plus a little extra at the
+                            // edges for depth.
+                            ZStack {
+                                Color.black.opacity(0.34)
+                                LinearGradient(
+                                    colors: [.black.opacity(0.25), .clear, .black.opacity(0.2)],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            }
                             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                         )
                         .overlay(
