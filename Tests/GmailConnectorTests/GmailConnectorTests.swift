@@ -149,10 +149,12 @@ struct GmailConnectorTests {
             (components.queryItems ?? []).map { ($0.name, $0.value ?? "") },
             uniquingKeysWith: { a, _ in a }
         )
-        #expect(map["q"] == "(is:unread OR is:important) newer_than:1d")
+        // Unread-only: read mail (incl. read-but-"important") must not be fetched.
+        #expect(map["q"] == "is:unread newer_than:1d")
+        #expect(map["q"]?.contains("is:important") == false)
         #expect(map["maxResults"] == "50")
 
-        // The raw query string must be percent-encoded on the wire (spaces/parens).
+        // The raw query string must be percent-encoded on the wire (spaces).
         let rawQuery = try #require(listURL.query)
         #expect(!rawQuery.contains(" "))
         #expect(rawQuery.contains("newer_than"))

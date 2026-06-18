@@ -56,6 +56,18 @@ public struct SlackConnector: Connector {
     /// blow the page budget (Tier-3 honors up to 1000).
     private static let historyLimit = 200
 
+    /// Message subtypes that are pure channel/system events (joins, renames, pins, …) and
+    /// carry nothing worth briefing. Everything else — including **bot/app messages, file
+    /// shares, and `/me`** — is kept. The previous "drop any subtype" rule silently nuked
+    /// unread bot/app and file DMs, so Slack surfaced nothing even when there was unread.
+    private static let noiseSubtypes: Set<String> = [
+        "channel_join", "channel_leave", "channel_topic", "channel_purpose", "channel_name",
+        "channel_archive", "channel_unarchive",
+        "group_join", "group_leave", "group_topic", "group_purpose", "group_name",
+        "group_archive", "group_unarchive",
+        "pinned_item", "unpinned_item",
+    ]
+
     private static let logger = Logger(subsystem: "co.daybrief.connector", category: "slack")
 
     private let transport: any HTTPTransport
@@ -240,8 +252,10 @@ public struct SlackConnector: Connector {
             let isGroup = channel["is_mpim"]?.bool == true
             for message in messages {
                 guard let ts = message["ts"]?.string else { continue }
-                // Skip system messages (joins, channel renames, etc.).
-                if message["subtype"]?.string != nil { continue }
+                // Skip only true system events (joins/renames/pins). Content-bearing
+                // subtypes — bot/app DMs, file shares, /me — are kept, so unread bot/file
+                // DMs surface instead of silently vanishing.
+                if let subtype = message["subtype"]?.string, Self.noiseSubtypes.contains(subtype) { continue }
                 let envelope = SlackRawEnvelope(
                     origin: isGroup ? .groupDM : .directMessage,
                     channelName: channel["name"]?.string ?? channelID,

@@ -13,7 +13,7 @@ import os
 /// "Testing"-status clients suffer (see the design doc, §7.2).
 ///
 /// **Fetch.** Per account: one `users.messages.list` with
-/// `q=(is:unread OR is:important) newer_than:1d&maxResults=50`, then a fan-out of
+/// `q=is:unread newer_than:1d&maxResults=50`, then a fan-out of
 /// `users.messages.get?format=metadata` (From/Subject/Date headers only — `snippet` is
 /// still returned in metadata mode, so v0 never pulls the message body). The list→get
 /// fan-out is N+1 and Gmail enforces a per-user 250-units/sec cap (list=get=5 units), so
@@ -123,9 +123,12 @@ public struct GmailConnector: Connector {
         components.host = "gmail.googleapis.com"
         components.path = "/gmail/v1/users/me/messages"
         components.queryItems = [
-            // `(is:unread OR is:important) newer_than:1d` — `URLComponents` percent-encodes the
-            // value, so the literal query is set as-is and serialized safely.
-            URLQueryItem(name: "q", value: "(is:unread OR is:important) newer_than:1d"),
+            // `is:unread newer_than:1d` — unread mail from the last day. Importantly NOT
+            // `OR is:important`: that clause pulled in messages the user had already read
+            // (Gmail auto-marks many as important), so read mail kept reappearing in the
+            // brief. Unread-but-important mail is still covered, since it's unread.
+            // `URLComponents` percent-encodes the value, so the literal query is safe.
+            URLQueryItem(name: "q", value: "is:unread newer_than:1d"),
             URLQueryItem(name: "maxResults", value: String(maxResults)),
         ]
         // `URLComponents` cannot fail to produce a URL from these fixed, valid pieces.
