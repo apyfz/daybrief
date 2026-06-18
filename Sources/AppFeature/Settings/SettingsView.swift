@@ -357,6 +357,14 @@ private struct ModelSection: View {
     /// Everything else from the (already dead-entry-filtered) catalogue.
     private var otherModels: [ModelInfo] { models.filter { !$0.isRecommended } }
 
+    /// What the picker actually lists. Default: just the recommended models (a short,
+    /// reliable set) plus the current selection if it isn't one. "Show all" reveals the
+    /// full catalogue. A single flat list — macOS `Picker` flattens `Section`s, so we
+    /// control membership directly rather than relying on sectioning to hide rows.
+    private var visibleModels: [ModelInfo] {
+        models.recommendedFirst(selection: model.selectedModel, showAll: showAllModels)
+    }
+
     /// One picker row, flagging free models so the cost/availability tradeoff is visible.
     @ViewBuilder
     private func modelRow(_ info: ModelInfo) -> some View {
@@ -392,16 +400,7 @@ private struct ModelSection: View {
                             .lineLimit(1)
                     } else {
                         Picker("Model", selection: $model.selectedModel) {
-                            if !recommendedModels.isEmpty {
-                                Section("Recommended") {
-                                    ForEach(recommendedModels) { modelRow($0) }
-                                }
-                            }
-                            if showAllModels || recommendedModels.isEmpty {
-                                Section(recommendedModels.isEmpty ? "Models" : "All models") {
-                                    ForEach(otherModels) { modelRow($0) }
-                                }
-                            }
+                            ForEach(visibleModels) { modelRow($0) }
                         }
                         .labelsHidden()
                         .frame(maxWidth: 260)

@@ -14,6 +14,7 @@ struct APIKeyStep: View {
     @State private var ollamaEndpoint = "http://127.0.0.1:11434"
     @State private var models: [ModelInfo] = []
     @State private var isLoading = false
+    @State private var showAllModels = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -111,12 +112,29 @@ struct APIKeyStep: View {
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(DaybriefTheme.inkSecondary)
             Picker("Model", selection: $model.selectedModel) {
-                ForEach(models) { info in
-                    Text(info.displayName ?? info.id).tag(info.id)
+                ForEach(models.recommendedFirst(selection: model.selectedModel, showAll: showAllModels)) { info in
+                    Text((info.displayName ?? info.id) + (info.isFree ? " · free" : "")).tag(info.id)
                 }
             }
             .labelsHidden()
             .frame(maxWidth: 360, alignment: .leading)
+            .onChange(of: model.selectedModel) { _, _ in
+                Task { await model.persistSelectedModel() }
+            }
+
+            if models.hasRecommendedAndOthers {
+                Toggle("Show all models", isOn: $showAllModels)
+                    .toggleStyle(.checkbox)
+                    .font(.system(size: 12))
+                    .foregroundStyle(DaybriefTheme.inkSecondary)
+            }
+            if models.freeSelection(model.selectedModel) != nil {
+                Text("Free models can be rate-limited and may need prompt logging enabled in your OpenRouter privacy settings (openrouter.ai/settings/privacy).")
+                    .font(.system(size: 11))
+                    .foregroundStyle(DaybriefTheme.inkSecondary)
+                    .frame(maxWidth: 360, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
@@ -141,8 +159,14 @@ struct APIKeyStep: View {
         await model.saveAPIKey(key, provider: model.selectedProvider, baseURL: baseURL)
         let loaded = await model.availableModels()
         models = loaded
-        if model.selectedModel.isEmpty, let first = loaded.first {
-            model.selectedModel = first.id
+        // Seed a known-good recommended model rather than whatever sorts first.
+        if model.selectedModel.isEmpty, let preferred = loaded.first(where: \.isRecommended) ?? loaded.first {
+            model.selectedModel = preferred.id
+        }
+        // Persist the choice so the app doesn't drop back to onboarding next launch
+        // (selectedModel lives in Settings; without this it was only ever in memory).
+        if !model.selectedModel.isEmpty {
+            await model.persistSelectedModel()
         }
     }
 
