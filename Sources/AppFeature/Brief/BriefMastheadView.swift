@@ -29,7 +29,7 @@ struct BriefMastheadView: View {
         VStack(alignment: .center, spacing: -6) {
             if let article {
                 Text(article)
-                    .font(DaybriefTheme.serifDisplay(30).italic())
+                    .font(DaybriefTheme.serifItalic(30))
                     .foregroundStyle(accent)
                     .shadow(color: .black.opacity(0.35), radius: 6, y: 1)
             }

@@ -16,11 +16,14 @@ struct BriefSectionView: View {
     let ctaLabels: [UUID: String]
     /// The edition's accent, sampled from its hero painting; defaults to the golden accent.
     var accent: Color = DaybriefTheme.accent
+    /// Whether the CTA badges may use the macOS 26 Liquid Glass rendering. The offscreen
+    /// snapshot tool sets this `false` (`ImageRenderer` can't rasterize Liquid Glass).
+    var usesGlassCTA: Bool = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(section.title)
-                .font(DaybriefTheme.serifBody(13).italic())
+                .font(DaybriefTheme.serifItalic(13))
                 .foregroundStyle(DaybriefTheme.ink)
                 .tracking(0.3)
                 .padding(.bottom, 10)
@@ -36,7 +39,8 @@ struct BriefSectionView: View {
                 BriefEntryView(
                     entry: entry,
                     ctaLabel: ctaLabels[entry.id] ?? "Let's do it",
-                    accent: accent
+                    accent: accent,
+                    usesGlassCTA: usesGlassCTA
                 )
             }
         }

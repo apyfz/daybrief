@@ -46,7 +46,7 @@ public struct BriefPanelSnapshotView: View {
 
                 if !brief.lede.isEmpty {
                     Text(brief.lede)
-                        .font(DaybriefTheme.serifDisplay(16).italic())
+                        .font(DaybriefTheme.serifItalic(16))
                         .foregroundStyle(DaybriefTheme.ink.opacity(0.85))
                         .lineSpacing(4)
                         .fixedSize(horizontal: false, vertical: true)
@@ -57,15 +57,23 @@ public struct BriefPanelSnapshotView: View {
                     BriefLeadView(
                         lead: lead,
                         ctaLabel: vm.leadCTALabel ?? "Let's do it",
-                        accent: editionAccent
+                        accent: editionAccent,
+                        // The offscreen `ImageRenderer` pass can't rasterize Liquid
+                        // Glass, so use the starburst CTA in snapshots.
+                        usesGlassCTA: false
                     )
                 }
 
                 VStack(alignment: .leading, spacing: 26) {
                     ForEach(vm.sections.filter { !$0.entries.isEmpty }) { section in
-                        BriefSectionView(section: section, ctaLabels: ctaLabels, accent: editionAccent)
-                            .padding(16)
-                            .editorialCard()
+                        BriefSectionView(
+                            section: section,
+                            ctaLabels: ctaLabels,
+                            accent: editionAccent,
+                            usesGlassCTA: false
+                        )
+                        .padding(16)
+                        .editorialCard()
                     }
                 }
 

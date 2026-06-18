@@ -59,6 +59,13 @@ let package = Package(
             dependencies: [
                 "DaybriefCore", "Pipeline", "Persistence", "Secrets", "LLMKit", "BriefRender",
                 "ConnectorKit", "GoogleCalendarConnector", "GmailConnector", "SlackConnector",
+            ],
+            resources: [
+                // Ships the editorial serif (Tiempos Text) in `Bundle.module/Fonts` when
+                // the licensed `.ttf` files are present locally. They are git-ignored, so
+                // the folder may be empty in CI — `DaybriefTheme.registerBundledFonts()`
+                // and the type APIs fall back to the system serif gracefully.
+                .copy("Fonts"),
             ]
         ),
 

@@ -1,5 +1,10 @@
+import CoreText
 import DaybriefCore
 import SwiftUI
+
+#if canImport(AppKit)
+    import AppKit
+#endif
 
 /// The Daybrief design system: a warm, editorial palette and a classic serif type
 /// scale that make the brief feel like a printed morning periodical rather than a
@@ -22,19 +27,86 @@ public enum DaybriefTheme {
     /// The golden-yellow accent (`~#F2C200`) — the masthead, CTA badges, dots.
     public static let accent = Color(red: 0.949, green: 0.761, blue: 0.000)
 
+    // MARK: - Bundled font registration
+
+    /// The PostScript name of the bundled upright editorial serif.
+    private static let tiemposRegularName = "TiemposText-Regular"
+    /// The PostScript name of the bundled italic editorial serif.
+    private static let tiemposItalicName = "TiemposText-RegularItalic"
+
+    /// Guards ``registerBundledFonts()`` so the registration only ever runs once,
+    /// no matter how many times (or how early) callers invoke it.
+    private static let registerOnce: Void = {
+        #if canImport(AppKit)
+            let urls = Bundle.module.urls(forResourcesWithExtension: "ttf", subdirectory: "Fonts") ?? []
+            for url in urls {
+                // `.process` registers for this process only (no user font install).
+                // Re-registering an already-registered font returns an error we
+                // intentionally ignore — registration is idempotent.
+                CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+            }
+        #endif
+    }()
+
+    /// Registers every bundled `.ttf` in `Bundle.module/Fonts` for this process so the
+    /// editorial serif is available before any view renders.
+    ///
+    /// Idempotent and run-once (backed by a `static let`), and safe to call lazily:
+    /// the type APIs below call it before probing for the font. When the licensed
+    /// Tiempos files are absent (they are git-ignored), this is a no-op and the type
+    /// scale falls back to the system serif.
+    public static func registerBundledFonts() {
+        _ = registerOnce
+    }
+
+    /// Whether the bundled Tiempos Text serif is actually available, computed once
+    /// *after* registering the bundled fonts. Drives the type APIs' fallback.
+    private static let tiemposAvailable: Bool = {
+        registerBundledFonts()
+        #if canImport(AppKit)
+            return NSFont(name: tiemposRegularName, size: 12) != nil
+        #else
+            return false
+        #endif
+    }()
+
     // MARK: - Type
 
     /// A serif display font (masthead, headlines, lede) at `size`.
     ///
-    /// Uses the system serif (New York on macOS 26) so no font has to be bundled;
-    /// a slightly heavier weight gives the masthead its printed-title presence.
+    /// Prefers the bundled Tiempos Text serif when present, scaling relative to
+    /// `.title` for Dynamic Type; otherwise falls back to the system serif (New York
+    /// on macOS 26) with a slightly heavier weight for the masthead's printed-title
+    /// presence, so no font has to be bundled.
     public static func serifDisplay(_ size: CGFloat) -> Font {
-        .system(size: size, weight: .semibold, design: .serif)
+        if tiemposAvailable {
+            return .custom(tiemposRegularName, size: size, relativeTo: .title)
+        }
+        return .system(size: size, weight: .semibold, design: .serif)
     }
 
     /// A quiet serif body font for context paragraphs and captions at `size`.
+    ///
+    /// Prefers the bundled Tiempos Text serif (scaled relative to `.body`); otherwise
+    /// falls back to the regular system serif.
     public static func serifBody(_ size: CGFloat) -> Font {
-        .system(size: size, weight: .regular, design: .serif)
+        if tiemposAvailable {
+            return .custom(tiemposRegularName, size: size, relativeTo: .body)
+        }
+        return .system(size: size, weight: .regular, design: .serif)
+    }
+
+    /// An italic serif at `size`, using the real Tiempos Text italic face when bundled
+    /// (synthesised obliquing of the upright face reads noticeably worse); otherwise
+    /// falls back to the system serif obliqued via `.italic()`.
+    ///
+    /// Use this anywhere the editorial serif is set in italic (the lede, the masthead's
+    /// leading "The", the quiet-day line) rather than `serifDisplay(_:).italic()`.
+    public static func serifItalic(_ size: CGFloat) -> Font {
+        if tiemposAvailable {
+            return .custom(tiemposItalicName, size: size, relativeTo: .body)
+        }
+        return .system(size: size, design: .serif).italic()
     }
 }
 
@@ -58,6 +130,37 @@ public extension Color {
             green: Double((value >> 8) & 0xFF) / 255.0,
             blue: Double(value & 0xFF) / 255.0
         )
+    }
+}
+
+// MARK: - Paper sheet
+
+/// The warm-paper "sheet" that the editorial reading surface (hero, lede, lead,
+/// sections, colophon — and the welcome / empty / loading / error states) floats on
+/// when the surrounding panel chrome is Liquid Glass (macOS 26).
+///
+/// Text reads on opaque warm paper for legibility while the panel margins read as
+/// glass; on pre-26 systems the panel is already paper, so the sheet just adds a
+/// gentle rounded edge and shadow and is visually quiet.
+public extension View {
+    /// Wraps the editorial content in the warm-paper sheet (rounded, subtly shadowed).
+    func paperSheet(cornerRadius: CGFloat = 16) -> some View {
+        modifier(PaperSheet(cornerRadius: cornerRadius))
+    }
+}
+
+/// The view modifier backing ``SwiftUICore/View/paperSheet(cornerRadius:)``.
+private struct PaperSheet: ViewModifier {
+    let cornerRadius: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .background(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(DaybriefTheme.paper)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .shadow(color: DaybriefTheme.ink.opacity(0.10), radius: 12, y: 4)
     }
 }
 
@@ -91,24 +194,60 @@ private struct EditorialCard: ViewModifier {
 
 // MARK: - Action badge
 
-/// The playful golden "starburst" call-to-action badge from the design reference
-/// (e.g. "Let's do it →"): a hand-drawn-feeling burst of the accent color with the
-/// label set in a small serif over it. Decorative chrome — the tap target is the
-/// enclosing button.
+/// The call-to-action badge from the design reference (e.g. "Let's do it →"): on
+/// macOS 26 an accent-tinted **interactive Liquid Glass** capsule with the label
+/// set in a small serif and a trailing chevron; on earlier systems the original
+/// playful golden "starburst" — a hand-drawn-feeling burst of the accent color
+/// with the label over it. Decorative chrome — the tap target is the enclosing
+/// button.
 public struct ActionBadge: View {
-    /// The CTA text to print on the badge (the trailing arrow is added here).
+    /// The CTA text to print on the badge (the trailing chevron is added here).
     private let label: String
-    /// The starburst fill — the edition's per-edition accent, sampled from its hero
-    /// painting; defaults to the app's golden accent.
+    /// The capsule tint / starburst fill — the edition's per-edition accent, sampled
+    /// from its hero painting; defaults to the app's golden accent.
     private let accent: Color
+    /// Forces the non-glass starburst rendering even on macOS 26. Used by the
+    /// offscreen snapshot tool: `ImageRenderer` does not rasterize the Liquid Glass
+    /// material, so a glass badge would snapshot blank.
+    private let forcesFallback: Bool
 
     /// Creates an action badge with `label`, optionally tinted by the edition `accent`.
-    public init(label: String, accent: Color = DaybriefTheme.accent) {
+    ///
+    /// Set `forcesFallback` to render the non-glass starburst even on macOS 26 (for
+    /// `ImageRenderer`-based snapshots, which can't rasterize Liquid Glass).
+    public init(label: String, accent: Color = DaybriefTheme.accent, forcesFallback: Bool = false) {
         self.label = label
         self.accent = accent
+        self.forcesFallback = forcesFallback
     }
 
     public var body: some View {
+        if #available(macOS 26.0, *), !forcesFallback {
+            glassBadge
+        } else {
+            starburstBadge
+        }
+    }
+
+    /// The macOS 26 Liquid Glass treatment: an accent-tinted interactive glass
+    /// capsule. The label stays ink for legibility against the tinted glass.
+    @available(macOS 26.0, *)
+    private var glassBadge: some View {
+        HStack(spacing: 4) {
+            Text(label)
+            Image(systemName: "chevron.right")
+                .font(DaybriefTheme.serifBody(10).weight(.semibold))
+        }
+        .font(DaybriefTheme.serifBody(11).weight(.semibold))
+        .foregroundStyle(DaybriefTheme.ink)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .glassEffect(.regular.tint(accent).interactive(), in: .capsule)
+        .accessibilityHidden(true)
+    }
+
+    /// The pre-26 fallback: the original golden starburst badge.
+    private var starburstBadge: some View {
         Text("\(label) →")
             .font(DaybriefTheme.serifBody(11).weight(.semibold))
             .foregroundStyle(DaybriefTheme.ink)

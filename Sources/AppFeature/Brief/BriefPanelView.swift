@@ -42,8 +42,15 @@ public struct BriefPanelView: View {
     public var body: some View {
         VStack(spacing: 0) {
             headerBar
-            Divider().opacity(0.4)
+            // The editorial reading surface floats on a warm-paper sheet inside the
+            // glass panel. The sheet keeps text legible on opaque paper while the
+            // panel chrome / margins read as Liquid Glass (macOS 26). On the paper
+            // fallback the sheet is visually quiet (paper-on-paper with a soft edge).
             content
+                .paperSheet()
+                .padding(.horizontal, 10)
+                .padding(.top, 4)
+                .padding(.bottom, 10)
         }
         .frame(width: panelWidth)
         .background(panelSurface)
@@ -62,17 +69,16 @@ public struct BriefPanelView: View {
 
     private var headerBar: some View {
         HStack(spacing: 8) {
-            Button {
-                NSApp.keyWindow?.close()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(DaybriefTheme.inkSecondary)
-                    .frame(width: 22, height: 22)
-                    .contentShape(Rectangle())
+            // Leading close control — its own glass element on the leading margin.
+            GlassToolbarCluster {
+                Button {
+                    NSApp.keyWindow?.close()
+                } label: {
+                    headerIcon("xmark", size: 11, weight: .semibold)
+                }
+                .modifier(GlassToolbarButton())
+                .accessibilityLabel("Close")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Close")
 
             Text(headerTitle)
                 .font(DaybriefTheme.serifBody(13))
@@ -82,36 +88,44 @@ public struct BriefPanelView: View {
 
             Spacer(minLength: 0)
 
-            if model.currentBrief != nil {
-                Button {
-                    Task { await model.generateBriefNow() }
-                } label: {
-                    Image(systemName: model.isGenerating ? "arrow.triangle.2.circlepath" : "arrow.clockwise")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(DaybriefTheme.inkSecondary)
-                        .frame(width: 22, height: 22)
-                        .contentShape(Rectangle())
+            // Trailing actions grouped in one glass cluster (refresh + settings).
+            GlassToolbarCluster {
+                if model.currentBrief != nil {
+                    Button {
+                        Task { await model.generateBriefNow() }
+                    } label: {
+                        headerIcon(
+                            model.isGenerating ? "arrow.triangle.2.circlepath" : "arrow.clockwise",
+                            size: 12,
+                            weight: .medium
+                        )
                         .symbolEffect(.rotate, isActive: model.isGenerating)
+                    }
+                    .modifier(GlassToolbarButton())
+                    .disabled(model.isGenerating)
+                    .accessibilityLabel("Refresh today's brief")
                 }
-                .buttonStyle(.plain)
-                .disabled(model.isGenerating)
-                .accessibilityLabel("Refresh today's brief")
-            }
 
-            Button {
-                openSetup()
-            } label: {
-                Image(systemName: "gearshape")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(DaybriefTheme.inkSecondary)
-                    .frame(width: 22, height: 22)
-                    .contentShape(Rectangle())
+                Button {
+                    openSetup()
+                } label: {
+                    headerIcon("gearshape", size: 12, weight: .medium)
+                }
+                .modifier(GlassToolbarButton())
+                .accessibilityLabel("Settings")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Settings")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
+    }
+
+    /// A toolbar icon label sized consistently for the header glass buttons.
+    private func headerIcon(_ name: String, size: CGFloat, weight: Font.Weight) -> some View {
+        Image(systemName: name)
+            .font(.system(size: size, weight: weight))
+            .foregroundStyle(DaybriefTheme.inkSecondary)
+            .frame(width: 22, height: 22)
+            .contentShape(Rectangle())
     }
 
     /// The thin title strip, e.g. "The Wednesday Brief · June 17".
@@ -167,7 +181,7 @@ public struct BriefPanelView: View {
 
             if !brief.lede.isEmpty {
                 Text(brief.lede)
-                    .font(DaybriefTheme.serifDisplay(16).italic())
+                    .font(DaybriefTheme.serifItalic(16))
                     .foregroundStyle(DaybriefTheme.ink.opacity(0.85))
                     .lineSpacing(4)
                     .fixedSize(horizontal: false, vertical: true)
@@ -235,7 +249,7 @@ public struct BriefPanelView: View {
                 .foregroundStyle(accent.opacity(0.8))
                 .accessibilityHidden(true)
             Text("Nothing demanding your attention. Enjoy the quiet.")
-                .font(DaybriefTheme.serifBody(13).italic())
+                .font(DaybriefTheme.serifItalic(13))
                 .foregroundStyle(DaybriefTheme.inkSecondary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
@@ -247,10 +261,16 @@ public struct BriefPanelView: View {
 
     // MARK: - Panel surface (Liquid Glass on macOS 26)
 
+    /// The panel container background: Liquid Glass chrome on macOS 26 (so the
+    /// margins around the paper sheet read as glass), falling back to the warm
+    /// paper page on earlier systems.
     @ViewBuilder
     private var panelSurface: some View {
         if #available(macOS 26.0, *) {
-            DaybriefTheme.paper
+            // A clear backing carrying the glass material fills the window; the
+            // editorial content rides an opaque paper sheet on top (see `body`),
+            // so only the chrome / margins read as glass.
+            Color.clear
                 .glassEffect(.regular, in: .rect(cornerRadius: 0))
         } else {
             DaybriefTheme.paper
@@ -319,5 +339,37 @@ private struct EditorialCardModifier: ViewModifier {
         content
             .padding(16)
             .editorialCard()
+    }
+}
+
+// MARK: - Header glass chrome (macOS 26)
+
+/// Groups the header toolbar buttons in a single ``GlassEffectContainer`` on
+/// macOS 26 so they render as one cohesive glass cluster (and blend when adjacent);
+/// a plain `HStack` on earlier systems.
+private struct GlassToolbarCluster<Content: View>: View {
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        if #available(macOS 26.0, *) {
+            GlassEffectContainer(spacing: 6) {
+                HStack(spacing: 6) { content }
+            }
+        } else {
+            HStack(spacing: 6) { content }
+        }
+    }
+}
+
+/// Renders a header toolbar button as interactive Liquid Glass on macOS 26
+/// (`.buttonStyle(.glass)`), falling back to the flat `.plain` style on earlier
+/// systems. Keeps the button's action, label, and accessibility intact.
+private struct GlassToolbarButton: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, *) {
+            content.buttonStyle(.glass)
+        } else {
+            content.buttonStyle(.plain)
+        }
     }
 }

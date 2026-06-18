@@ -25,6 +25,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_: Notification) {
+        // Register the bundled editorial serif (Tiempos Text) before any view
+        // renders, so the brief panel draws in the real face from first paint.
+        // Idempotent + run-once, and a no-op (graceful system-serif fallback) when
+        // the git-ignored font files aren't present.
+        DaybriefTheme.registerBundledFonts()
+
         // Menu-bar accessory: no Dock icon until the settings window opens.
         NSApplication.shared.setActivationPolicy(.accessory)
 

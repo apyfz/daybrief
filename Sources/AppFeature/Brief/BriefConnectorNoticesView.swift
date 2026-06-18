@@ -18,7 +18,7 @@ struct BriefConnectorNoticesView: View {
                         .font(.system(size: 9))
                         .foregroundStyle(DaybriefTheme.inkSecondary.opacity(0.7))
                     Text(notice(for: error))
-                        .font(DaybriefTheme.serifBody(11).italic())
+                        .font(DaybriefTheme.serifItalic(11))
                         .foregroundStyle(DaybriefTheme.inkSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }

@@ -127,6 +127,10 @@ func render() throws {
 
     let brief = makeSampleBrief()
 
+    // Register the bundled editorial serif so the snapshot rasterizes in the real
+    // Tiempos face when the (git-ignored) font files are present; a no-op otherwise.
+    DaybriefTheme.registerBundledFonts()
+
     // `ImageRenderer` does not draw the content of the live panel's `ScrollView`, and
     // it does not rasterize the macOS 26 Liquid Glass surface material — both render
     // blank/black offscreen. `BriefPanelSnapshotView` composes the *same* editorial

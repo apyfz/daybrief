@@ -15,6 +15,9 @@ struct BriefEntryView: View {
     let ctaLabel: String
     /// The edition's accent, sampled from its hero painting; defaults to the golden accent.
     var accent: Color = DaybriefTheme.accent
+    /// Whether the CTA badge may use the macOS 26 Liquid Glass rendering. The offscreen
+    /// snapshot tool sets this `false` (`ImageRenderer` can't rasterize Liquid Glass).
+    var usesGlassCTA: Bool = true
 
     @Environment(\.openURL) private var openURL
 
@@ -37,7 +40,7 @@ struct BriefEntryView: View {
                 Button {
                     openURL(link)
                 } label: {
-                    ActionBadge(label: ctaLabel, accent: accent)
+                    ActionBadge(label: ctaLabel, accent: accent, forcesFallback: !usesGlassCTA)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("\(ctaLabel): \(entry.headline)")
