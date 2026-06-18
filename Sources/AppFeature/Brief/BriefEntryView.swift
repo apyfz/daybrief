@@ -18,6 +18,9 @@ struct BriefEntryView: View {
     /// Whether the CTA badge may use the macOS 26 Liquid Glass rendering. The offscreen
     /// snapshot tool sets this `false` (`ImageRenderer` can't rasterize Liquid Glass).
     var usesGlassCTA: Bool = true
+    /// Called with the entry's id when the user dismisses it. Defaults to a no-op so
+    /// snapshots and previews need not supply one.
+    var onDismiss: (UUID) -> Void = { _ in }
 
     @Environment(\.openURL) private var openURL
 
@@ -27,6 +30,8 @@ struct BriefEntryView: View {
                 .font(DaybriefTheme.serifDisplay(18))
                 .foregroundStyle(DaybriefTheme.ink)
                 .fixedSize(horizontal: false, vertical: true)
+                // Keep the headline clear of the top-right dismiss control.
+                .padding(.trailing, 20)
 
             if let detail = entry.detail {
                 Text(detail)
@@ -49,5 +54,11 @@ struct BriefEntryView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        // A subtle dismiss control in the top-right corner of the entry card.
+        .overlay(alignment: .topTrailing) {
+            DismissCardButton(accessibilityLabel: "Dismiss: \(entry.headline)") {
+                onDismiss(entry.id)
+            }
+        }
     }
 }

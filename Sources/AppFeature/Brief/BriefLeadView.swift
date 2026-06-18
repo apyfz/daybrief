@@ -22,6 +22,9 @@ struct BriefLeadView: View {
     /// Whether the CTA badge may use the macOS 26 Liquid Glass rendering. The offscreen
     /// snapshot tool sets this `false` (`ImageRenderer` can't rasterize Liquid Glass).
     var usesGlassCTA: Bool = true
+    /// Called with the lead entry's id when the user dismisses it. Defaults to a no-op
+    /// so snapshots and previews need not supply one.
+    var onDismiss: (UUID) -> Void = { _ in }
 
     @Environment(\.openURL) private var openURL
 
@@ -40,6 +43,8 @@ struct BriefLeadView: View {
                 .foregroundStyle(DaybriefTheme.ink)
                 .lineSpacing(2)
                 .fixedSize(horizontal: false, vertical: true)
+                // Keep the headline clear of the top-right dismiss control.
+                .padding(.trailing, 22)
                 .accessibilityAddTraits(.isHeader)
 
             if let detail = lead.detail {
@@ -71,5 +76,11 @@ struct BriefLeadView: View {
                 .padding(.top, 18)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        // A subtle dismiss control in the top-right corner of the lead card.
+        .overlay(alignment: .topTrailing) {
+            DismissCardButton(accessibilityLabel: "Dismiss lead story: \(lead.headline)") {
+                onDismiss(lead.id)
+            }
+        }
     }
 }

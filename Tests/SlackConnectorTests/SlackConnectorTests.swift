@@ -102,11 +102,15 @@ private func dayWindow() -> (since: Date, until: Date) {
 @Test func fetch_searchAndDMs_viaMockTransport() async throws {
     let transport = MockHTTPTransport()
     // FIFO order: auth.test (resolve self), search.messages, conversations.list, then
-    // one conversations.history per DM channel (the list fixture has 2: D03DIRECT + G05GROUP).
+    // per DM channel a conversations.info (unread count) followed — when unread > 0 —
+    // by conversations.history (the list fixture has 2 channels: D03DIRECT + G05GROUP,
+    // and the info fixture reports 3 unread for each).
     try await transport.enqueue(data: loader.data("auth-test"))
     try await transport.enqueue(data: loader.data("search-messages"))
     try await transport.enqueue(data: loader.data("conversations-list"))
+    try await transport.enqueue(data: loader.data("conversations-info"))
     try await transport.enqueue(data: loader.data("conversations-history"))
+    try await transport.enqueue(data: loader.data("conversations-info"))
     try await transport.enqueue(data: loader.data("conversations-history"))
 
     let window = dayWindow()
@@ -121,7 +125,8 @@ private func dayWindow() -> (since: Date, until: Date) {
     #expect(dms.count == 4)
 
     let requests = await transport.recordedRequests
-    #expect(requests.count == 5)
+    // auth.test, search.messages, conversations.list, then (info + history) × 2 channels.
+    #expect(requests.count == 7)
 
     // First request resolves the authed user via auth.test (with a Bearer token).
     let authURL = try #require(requests.first?.url?.absoluteString)
@@ -141,7 +146,52 @@ private func dayWindow() -> (since: Date, until: Date) {
     #expect(requests[1].value(forHTTPHeaderField: "Authorization") == "Bearer xoxp-test-token")
 
     #expect(try #require(requests[2].url?.absoluteString).contains("conversations.list"))
-    #expect(try #require(requests[3].url?.absoluteString).contains("conversations.history"))
+    // Each channel is probed with conversations.info before its history is read.
+    let infoURL = try #require(requests[3].url?.absoluteString)
+    #expect(infoURL.contains("conversations.info"))
+    #expect(infoURL.contains("channel=D03DIRECT"))
+    let historyURL = try #require(requests[4].url?.absoluteString)
+    #expect(historyURL.contains("conversations.history"))
+    #expect(historyURL.contains("channel=D03DIRECT"))
+    // DM history is unread-based now: no oldest/latest window, just the unread tail.
+    #expect(!historyURL.contains("oldest="))
+    #expect(!historyURL.contains("latest="))
+    #expect(historyURL.contains("limit=3")) // min(unread=3, historyLimit)
+    #expect(try #require(requests[5].url?.absoluteString).contains("conversations.info"))
+    #expect(try #require(requests[6].url?.absoluteString).contains("conversations.history"))
+}
+
+@Test func fetch_dmWithZeroUnread_isSkippedNoHistoryCall() async throws {
+    let transport = MockHTTPTransport()
+    // auth.test returns no user_id so mentions are skipped — this test is only about
+    // the unread gate. The list fixture has two channels: the first reports 0 unread
+    // (must be skipped with no history call), the second reports 3 unread.
+    try await transport.enqueue(data: loader.data("auth-test-no-user"))
+    try await transport.enqueue(data: loader.data("conversations-list"))
+    try await transport.enqueue(data: loader.data("conversations-info-read")) // D03DIRECT: 0 unread → skip
+    try await transport.enqueue(data: loader.data("conversations-info")) // G05GROUP: 3 unread → read
+    try await transport.enqueue(data: loader.data("conversations-history"))
+
+    let window = dayWindow()
+    let raw = try await makeConnector(transport: transport)
+        .fetch(FetchRequest(accounts: [makeAccount()], since: window.since, until: window.until))
+
+    // Only the second (unread) channel contributes DM items; the read channel adds none.
+    let dms = raw.filter { $0.id.hasPrefix("dm:") }
+    #expect(dms.count == 2) // G05GROUP's two real messages (channel_join subtype skipped)
+    #expect(dms.allSatisfy { $0.id.hasPrefix("dm:G05GROUP:") })
+
+    let requests = await transport.recordedRequests
+    // auth.test, conversations.list, info(read)→skip, info(unread)→history = 5 requests.
+    #expect(requests.count == 5)
+    let urls = requests.compactMap { $0.url?.absoluteString }
+    // Exactly one history call was made — the read channel never triggered one.
+    #expect(urls.filter { $0.contains("conversations.history") }.count == 1)
+    #expect(urls.filter { $0.contains("conversations.info") }.count == 2)
+    // The single history call targets the unread channel, not the read one.
+    let historyURL = try #require(urls.first { $0.contains("conversations.history") })
+    #expect(historyURL.contains("channel=G05GROUP"))
+    #expect(!urls.contains { $0.contains("conversations.history") && $0.contains("channel=D03DIRECT") })
 }
 
 @Test func fetch_thenNormalize_endToEnd() async throws {
@@ -149,7 +199,9 @@ private func dayWindow() -> (since: Date, until: Date) {
     try await transport.enqueue(data: loader.data("auth-test"))
     try await transport.enqueue(data: loader.data("search-messages"))
     try await transport.enqueue(data: loader.data("conversations-list"))
+    try await transport.enqueue(data: loader.data("conversations-info"))
     try await transport.enqueue(data: loader.data("conversations-history"))
+    try await transport.enqueue(data: loader.data("conversations-info"))
     try await transport.enqueue(data: loader.data("conversations-history"))
 
     let window = dayWindow()
@@ -173,7 +225,9 @@ private func dayWindow() -> (since: Date, until: Date) {
     try await transport.enqueue(data: loader.data("auth-test"))
     try await transport.enqueue(data: loader.data("search-messages-fuzzy"))
     try await transport.enqueue(data: loader.data("conversations-list"))
+    try await transport.enqueue(data: loader.data("conversations-info"))
     try await transport.enqueue(data: loader.data("conversations-history"))
+    try await transport.enqueue(data: loader.data("conversations-info"))
     try await transport.enqueue(data: loader.data("conversations-history"))
 
     let window = dayWindow()
@@ -196,7 +250,9 @@ private func dayWindow() -> (since: Date, until: Date) {
     // back to DMs only.
     try await transport.enqueue(data: loader.data("auth-test-no-user"))
     try await transport.enqueue(data: loader.data("conversations-list"))
+    try await transport.enqueue(data: loader.data("conversations-info"))
     try await transport.enqueue(data: loader.data("conversations-history"))
+    try await transport.enqueue(data: loader.data("conversations-info"))
     try await transport.enqueue(data: loader.data("conversations-history"))
 
     let window = dayWindow()
@@ -206,9 +262,10 @@ private func dayWindow() -> (since: Date, until: Date) {
     #expect(raw.filter { $0.id.hasPrefix("mention:") }.isEmpty)
     #expect(raw.filter { $0.id.hasPrefix("dm:") }.count == 4)
 
-    // No search.messages request was issued: auth.test, then list, then two history calls.
+    // No search.messages request was issued: auth.test, then list, then per channel an
+    // info + history call (two channels in the list fixture).
     let requests = await transport.recordedRequests
-    #expect(requests.count == 4)
+    #expect(requests.count == 6)
     #expect(try #require(requests.first?.url?.absoluteString).contains("auth.test"))
     #expect(requests.allSatisfy { !($0.url?.absoluteString.contains("search.messages") ?? false) })
 }

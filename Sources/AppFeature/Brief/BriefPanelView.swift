@@ -33,6 +33,12 @@ public struct BriefPanelView: View {
         NSApp.activate()
     }
 
+    /// Removes the item with `id` from the current edition (the lead or a section entry),
+    /// once the user has dealt with it. Routed through the model so the change persists.
+    private func dismiss(_ id: UUID) {
+        Task { await model.dismissEntry(id: id) }
+    }
+
     /// The fixed panel width — a single column, like a printed page.
     private let panelWidth: CGFloat = 380
     /// Cap the edition's height so a long brief scrolls instead of overflowing the
@@ -200,7 +206,8 @@ public struct BriefPanelView: View {
                 BriefLeadView(
                     lead: lead,
                     ctaLabel: vm.leadCTALabel ?? "Let's do it",
-                    accent: editionAccent
+                    accent: editionAccent,
+                    onDismiss: dismiss
                 )
             }
 
@@ -209,8 +216,13 @@ public struct BriefPanelView: View {
             } else if !vm.sections.allSatisfy({ $0.entries.isEmpty }) {
                 VStack(alignment: .leading, spacing: 26) {
                     ForEach(vm.sections.filter { !$0.entries.isEmpty }) { section in
-                        BriefSectionView(section: section, ctaLabels: ctaLabels, accent: editionAccent)
-                            .modifier(EditorialCardModifier())
+                        BriefSectionView(
+                            section: section,
+                            ctaLabels: ctaLabels,
+                            accent: editionAccent,
+                            onDismiss: dismiss
+                        )
+                        .modifier(EditorialCardModifier())
                     }
                 }
             }

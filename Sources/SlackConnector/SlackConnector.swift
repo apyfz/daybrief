@@ -23,7 +23,12 @@ import os
 ///    contains the `<@user_id>` mention token — `search.messages` matches text
 ///    fuzzily, so the bare query alone surfaces non-mentions too.
 /// 3. **DMs** — `GET conversations.list?types=im,mpim` then, for each DM channel,
-///    `GET conversations.history?oldest=<since>&latest=<until>`.
+///    `GET conversations.info?channel=<id>` to read the per-user
+///    `unread_count_display`; channels with nothing unread are skipped, and for the
+///    rest the `unread` most-recent messages are pulled with
+///    `GET conversations.history?limit=<unread>&inclusive=true` (newest-first, so the
+///    unread tail is returned regardless of age — a genuinely-unread DM from days ago
+///    still surfaces).
 ///
 /// If `auth.test` can't resolve the user's identity, the mentions search is skipped
 /// entirely (DMs are still returned) rather than mislabeling every visible message as
@@ -46,8 +51,9 @@ public struct SlackConnector: Connector {
     /// Maximum DM/MPIM channels swept per account in one fetch (keeps a single brief
     /// well inside the Tier-3 budget even for very chatty workspaces).
     private static let maxDMChannels = 30
-    /// `conversations.history` page size (Tier-3 honors up to 1000; a distributed app
-    /// is silently capped at 15 — see the runtime detection in ``fetchDMs(...)``).
+    /// Upper bound on messages pulled per DM channel: a DM's history request asks for
+    /// `min(unread, historyLimit)` so a single very stale, high-unread channel can't
+    /// blow the page budget (Tier-3 honors up to 1000).
     private static let historyLimit = 200
 
     private static let logger = Logger(subsystem: "co.daybrief.connector", category: "slack")
@@ -98,12 +104,7 @@ public struct SlackConnector: Connector {
                     "auth.test did not return a user_id; skipping the Slack mentions search and returning DMs only."
                 )
             }
-            items += try await fetchDMs(
-                token: token,
-                account: account,
-                since: request.since,
-                until: request.until
-            )
+            items += try await fetchDMs(token: token, account: account)
         }
         return items
     }
@@ -186,8 +187,18 @@ public struct SlackConnector: Connector {
         }
     }
 
-    /// DMs + group-DMs via `conversations.list` then `conversations.history` per channel.
-    private func fetchDMs(token: String, account: Account, since: Date, until: Date) async throws -> [RawItem] {
+    /// Unread DMs + group-DMs via `conversations.list`, then per channel a
+    /// `conversations.info` read of the unread count and, when non-zero, a
+    /// `conversations.history` pull of exactly that many newest messages.
+    ///
+    /// This is **unread-based, not window-based**: `conversations.info`'s per-user
+    /// `unread_count_display` tells us how many messages the user hasn't read, and
+    /// `conversations.history` returns newest-first, so the `unread` most-recent
+    /// messages *are* the unread ones — regardless of how old they are. A DM that
+    /// went unread for days still surfaces; a fully-read channel is skipped with no
+    /// history call. (`unread_count_display` requires the `im:read`/`mpim:read`
+    /// scopes the connector already documents.)
+    private func fetchDMs(token: String, account: Account) async throws -> [RawItem] {
         var listComponents = Self.apiComponents(method: "conversations.list")
         listComponents.queryItems = [
             URLQueryItem(name: "types", value: "im,mpim"),
@@ -197,35 +208,34 @@ public struct SlackConnector: Connector {
         let listJSON = try await get(listComponents, token: token, method: "conversations.list")
         let channels = (listJSON["channels"]?.array ?? []).prefix(Self.maxDMChannels)
 
-        let oldest = Self.slackTimestamp(since)
-        let latest = Self.slackTimestamp(until)
-
         var items: [RawItem] = []
         for channel in channels {
             try Task.checkCancellation()
             guard let channelID = channel["id"]?.string else { continue }
 
+            // Per-user unread count for this DM. `conversations.list` doesn't carry it,
+            // so ask `conversations.info` (which returns the authed user's view).
+            var infoComponents = Self.apiComponents(method: "conversations.info")
+            infoComponents.queryItems = [
+                URLQueryItem(name: "channel", value: channelID),
+            ]
+            let infoJSON = try await get(infoComponents, token: token, method: "conversations.info")
+            let unread = infoJSON["channel"]?["unread_count_display"]?.int ?? 0
+            // Nothing unread → don't spend a history call; this channel contributes nothing.
+            guard unread > 0 else { continue }
+
+            // Pull only the unread tail. Slack returns newest-first with no oldest/latest,
+            // so the `unread` most-recent messages are exactly the unread ones (capped at
+            // the page size as a safety bound for very stale, high-count channels).
+            let limit = min(unread, Self.historyLimit)
             var historyComponents = Self.apiComponents(method: "conversations.history")
             historyComponents.queryItems = [
                 URLQueryItem(name: "channel", value: channelID),
-                URLQueryItem(name: "oldest", value: oldest),
-                URLQueryItem(name: "latest", value: latest),
                 URLQueryItem(name: "inclusive", value: "true"),
-                URLQueryItem(name: "limit", value: String(Self.historyLimit)),
+                URLQueryItem(name: "limit", value: String(limit)),
             ]
             let historyJSON = try await get(historyComponents, token: token, method: "conversations.history")
             let messages = historyJSON["messages"]?.array ?? []
-
-            // A distributed (mis-configured) app is silently capped at 15 messages
-            // despite a larger requested limit; an internal app honors the full page.
-            // Exactly 15 returned with no more pages is the tell-tale signature.
-            if Self.historyLimit > 15, messages.count == 15,
-               (historyJSON["has_more"]?.bool ?? false) == false
-            {
-                Self.logger.warning(
-                    "conversations.history returned exactly 15 messages with no more pages — the Slack app may be publicly distributed (Daybrief needs an internal app)."
-                )
-            }
 
             let isGroup = channel["is_mpim"]?.bool == true
             for message in messages {
@@ -354,11 +364,6 @@ public struct SlackConnector: Connector {
     static func date(fromSlackTS ts: String) -> Date? {
         guard let seconds = Double(ts) else { return nil }
         return Date(timeIntervalSince1970: seconds)
-    }
-
-    /// Renders a `Date` as a Slack `oldest`/`latest` epoch-seconds string.
-    static func slackTimestamp(_ date: Date) -> String {
-        String(format: "%.6f", date.timeIntervalSince1970)
     }
 
     /// `YYYY-MM-DD` (UTC) for the day before `date`, for `search.messages`'

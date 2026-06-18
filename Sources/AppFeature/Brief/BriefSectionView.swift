@@ -19,6 +19,9 @@ struct BriefSectionView: View {
     /// Whether the CTA badges may use the macOS 26 Liquid Glass rendering. The offscreen
     /// snapshot tool sets this `false` (`ImageRenderer` can't rasterize Liquid Glass).
     var usesGlassCTA: Bool = true
+    /// Forwarded to each entry: called with the entry's id when the user dismisses it.
+    /// Defaults to a no-op so snapshots and previews need not supply one.
+    var onDismiss: (UUID) -> Void = { _ in }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -40,7 +43,8 @@ struct BriefSectionView: View {
                     entry: entry,
                     ctaLabel: ctaLabels[entry.id] ?? "Let's do it",
                     accent: accent,
-                    usesGlassCTA: usesGlassCTA
+                    usesGlassCTA: usesGlassCTA,
+                    onDismiss: onDismiss
                 )
             }
         }

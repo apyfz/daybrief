@@ -233,6 +233,63 @@ public final class AppModel {
         return map
     }
 
+    // MARK: - Dismissing items
+
+    /// Removes a single item from the current edition once the user has dealt with it.
+    ///
+    /// If `id` is the lead story it is cleared; otherwise it is removed from whichever
+    /// section holds it, and a section emptied by the removal is dropped entirely.
+    /// ``Brief`` is an immutable value type, so the edition is reconstructed with the
+    /// item gone, persisted (overwriting the same brief id), and set as
+    /// ``currentBrief``. Unknown ids are a harmless no-op; an empty edition falls back
+    /// to the existing quiet-day rendering.
+    public func dismissEntry(id: UUID) async {
+        guard let brief = currentBrief else { return }
+
+        let wasLead = brief.lead?.id == id
+        let newLead = wasLead ? nil : brief.lead
+
+        // Drop the entry from whichever section holds it, then drop any section the
+        // removal empties so the page doesn't keep a titled-but-empty movement.
+        var newSections: [BriefSection] = []
+        var removedFromSection = false
+        for section in brief.sections {
+            let remaining = section.entries.filter { $0.id != id }
+            if remaining.count != section.entries.count {
+                removedFromSection = true
+            }
+            guard !remaining.isEmpty else { continue }
+            newSections.append(BriefSection(id: section.id, title: section.title, entries: remaining))
+        }
+
+        // No-op if the id matched neither the lead nor any section entry.
+        guard wasLead || removedFromSection else { return }
+
+        let updated = Brief(
+            id: brief.id,
+            generatedAt: brief.generatedAt,
+            spaceFilter: brief.spaceFilter,
+            masthead: brief.masthead,
+            lede: brief.lede,
+            lead: newLead,
+            mood: brief.mood,
+            hero: brief.hero,
+            sections: newSections,
+            signalsRead: brief.signalsRead,
+            sources: brief.sources,
+            connectorErrors: brief.connectorErrors
+        )
+
+        do {
+            try await environment.briefRepository.save(updated)
+        } catch {
+            // Persisting the dismissal failed: keep the in-memory edition authoritative
+            // so the card still disappears for the user, and log rather than surface.
+            Self.logger.error("dismissEntry persistence failed: \(error.localizedDescription, privacy: .public)")
+        }
+        currentBrief = updated
+    }
+
     // MARK: - Connecting tools
 
     /// Runs the Google loopback OAuth flow for `id` (Calendar or Gmail) with the
