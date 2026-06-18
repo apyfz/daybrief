@@ -337,9 +337,26 @@ public final class AppModel {
 
     /// Connects Slack from a pasted `xoxp-` user token, storing it in the Keychain
     /// and recording the account under `space`.
+    ///
+    /// Slack is treated as a **single-workspace** connector for v0: any previously
+    /// connected Slack accounts (and their Keychain secrets) are removed first, so
+    /// "Add or reconnect" *replaces* the existing workspace rather than appending a
+    /// second one. (Google connectors keep their multi-account behavior.)
     public func connectSlack(userToken: String, workspaceLabel: String, space: String) async {
         lastError = nil
         do {
+            // Single-workspace: clear any existing Slack accounts (token + client refs)
+            // before adding the new one, so a reconnect never leaves a duplicate behind.
+            let existingSlackAccounts = connections
+                .filter { $0.connectorId == .slack }
+                .flatMap(\.accounts)
+            for account in existingSlackAccounts {
+                await deleteAccountSecrets(accountID: account.id, connector: .slack)
+            }
+            if let slackConnection = connections.first(where: { $0.connectorId == .slack }) {
+                try await environment.connectionRepository.deleteConnection(id: slackConnection.id)
+            }
+
             let accountID = UUID()
             let tokenRef = AccountSecrets.tokenRef(for: accountID, connector: .slack)
             try await environment.keychain.setString(userToken, for: tokenRef)
@@ -351,11 +368,67 @@ public final class AppModel {
                 spaceKey: space,
                 secretRef: tokenRef
             )
+            // Reload so `upsertAccount` sees the cleared state and creates a fresh
+            // single-account Slack connection rather than reusing the stale in-memory one.
+            await reloadConnections()
             try await upsertAccount(account, connectorId: .slack, connectionName: "Slack")
             await reloadConnections()
         } catch {
             lastError = "Could not connect Slack."
             Self.logger.error("connectSlack failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// Removes the connected account with `accountID`.
+    ///
+    /// Finds the owning connection and drops that account: if it was the connection's
+    /// last account the whole connection is deleted, otherwise the connection is saved
+    /// without it. The account's Keychain secrets (token ref + derived client ref) are
+    /// deleted regardless. Best-effort and crash-free — any failure is surfaced in
+    /// ``lastError`` and the connection list is reloaded.
+    public func removeAccount(accountID: UUID) async {
+        lastError = nil
+        guard let connection = connections.first(where: { conn in
+            conn.accounts.contains { $0.id == accountID }
+        }) else { return }
+
+        // The connector is needed to derive the Keychain refs; capture it before edits.
+        let connector = connection.connectorId
+        await deleteAccountSecrets(accountID: accountID, connector: connector)
+
+        do {
+            let remaining = connection.accounts.filter { $0.id != accountID }
+            if remaining.isEmpty {
+                try await environment.connectionRepository.deleteConnection(id: connection.id)
+            } else {
+                let updated = Connection(
+                    id: connection.id,
+                    connectorId: connection.connectorId,
+                    displayName: connection.displayName,
+                    accounts: remaining,
+                    isEnabled: connection.isEnabled
+                )
+                try await environment.connectionRepository.save(updated)
+            }
+        } catch {
+            lastError = "Could not remove the account."
+            Self.logger.error("removeAccount failed: \(error.localizedDescription, privacy: .public)")
+        }
+        await reloadConnections()
+    }
+
+    /// Deletes the Keychain material for `accountID` under `connector`: the token ref
+    /// and its derived OAuth client ref. Best-effort — a delete of a non-existent item
+    /// is a no-op, and a failure is logged rather than surfaced (the DB row is still
+    /// removed by the caller, so the account stops being used either way).
+    private func deleteAccountSecrets(accountID: UUID, connector: ConnectorID) async {
+        let tokenRef = AccountSecrets.tokenRef(for: accountID, connector: connector)
+        let clientRef = AccountSecrets.clientRef(for: tokenRef)
+        do {
+            try await environment.keychain.delete(tokenRef)
+            try await environment.keychain.delete(clientRef)
+        } catch {
+            Self.logger.error("deleteAccountSecrets failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 
@@ -389,6 +462,83 @@ public final class AppModel {
             lastError = "Could not move the account to that space."
             Self.logger.error("setSpace failed: \(error.localizedDescription, privacy: .public)")
         }
+    }
+
+    /// Adds a new space with `displayName`, deriving a stable slug key from it.
+    ///
+    /// No-ops on an empty/whitespace name or when a space with the derived key (or the
+    /// same display name) already exists, so the call is safe to wire straight to a
+    /// text field's Add button. Reloads ``spaces`` on success.
+    public func addSpace(displayName: String) async {
+        lastError = nil
+        let trimmed = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let key = Self.spaceKey(from: trimmed)
+        guard !key.isEmpty else { return }
+        // Ignore duplicates by derived key or by display name.
+        guard !spaces.contains(where: { $0.key == key || $0.displayName.caseInsensitiveCompare(trimmed) == .orderedSame }) else {
+            return
+        }
+        do {
+            try await environment.spaceRepository.save(Space(key: key, displayName: trimmed))
+            await reloadSpaces()
+        } catch {
+            lastError = "Could not add the space."
+            Self.logger.error("addSpace failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// Removes the space with `key`.
+    ///
+    /// Safeguards keep the model usable: it refuses to remove the **last** remaining
+    /// space (an account must always have somewhere to live), and any accounts filed
+    /// under the removed space are first re-filed under the first remaining space via
+    /// the existing ``setSpace(accountID:to:)`` path. Reloads ``spaces`` and
+    /// ``connections`` on success.
+    public func removeSpace(key: String) async {
+        lastError = nil
+        // Never delete the last space.
+        guard spaces.count > 1 else { return }
+        guard spaces.contains(where: { $0.key == key }) else { return }
+        // The fallback space accounts get reassigned to: the first space that isn't this one.
+        guard let fallback = spaces.first(where: { $0.key != key }) else { return }
+
+        // Reassign every account currently in this space to the fallback first, so no
+        // account is orphaned pointing at a deleted space key.
+        let orphanedAccountIDs = connections
+            .flatMap(\.accounts)
+            .filter { $0.spaceKey == key }
+            .map(\.id)
+        for accountID in orphanedAccountIDs {
+            await setSpace(accountID: accountID, to: fallback.key)
+        }
+
+        do {
+            try await environment.spaceRepository.delete(key: key)
+            await reloadSpaces()
+            await reloadConnections()
+        } catch {
+            lastError = "Could not remove the space."
+            Self.logger.error("removeSpace failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// Derives a stable, slug-like ``Space/key`` from a human display name:
+    /// lowercased, non-alphanumeric runs collapsed to single hyphens, trimmed.
+    static func spaceKey(from displayName: String) -> String {
+        let lowered = displayName.lowercased()
+        var slug = ""
+        var lastWasHyphen = false
+        for character in lowered {
+            if character.isLetter || character.isNumber {
+                slug.append(character)
+                lastWasHyphen = false
+            } else if !lastWasHyphen {
+                slug.append("-")
+                lastWasHyphen = true
+            }
+        }
+        return slug.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
     }
 
     /// Adds `account` to its connector's connection (creating the connection on first
@@ -558,5 +708,16 @@ public final class AppModel {
     func applyPreviewState(brief: Brief?, setup: Setup) {
         currentBrief = brief
         self.setup = setup
+    }
+
+    /// Reloads ``spaces`` and ``connections`` from the repositories without touching
+    /// `SMAppService`, the prompt files, or the setup phase.
+    ///
+    /// Test-only seam: lets a test seed the in-memory repositories directly and then
+    /// pull that state into the model, exercising the space/account management paths
+    /// without the side effects of ``bootstrap()``.
+    func loadForTesting() async {
+        await reloadSpaces()
+        await reloadConnections()
     }
 }

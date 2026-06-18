@@ -44,4 +44,16 @@ public struct SpaceRepository: Sendable {
             try SpaceRecord.deleteOne(db, key: key)
         }
     }
+
+    /// Deletes the space(s) with the given stable ``Space/key``. Returns `true` if
+    /// at least one row was removed.
+    @discardableResult
+    public func delete(key: String) async throws -> Bool {
+        try await queue.write { db in
+            let deleted = try SpaceRecord
+                .filter(Column("key") == key)
+                .deleteAll(db)
+            return deleted > 0
+        }
+    }
 }

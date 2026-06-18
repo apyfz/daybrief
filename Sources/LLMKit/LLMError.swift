@@ -27,6 +27,48 @@ public enum LLMError: Error, Sendable, Equatable {
     case cancelled
 }
 
+public extension LLMError {
+    /// A short, secret-free reason string suitable for display.
+    ///
+    /// Deliberately avoids echoing ``httpStatus``'s `body` (provider error payloads
+    /// may carry sensitive detail) and never includes the request body. The HTTP
+    /// statuses callers can act on are spelled out:
+    ///
+    /// - **404** maps to "choose a different model" — OpenRouter returns 404 for model
+    ///   ids that appear in `/models` but aren't actually usable on the account, so the
+    ///   actionable fix is picking another model rather than re-entering the key.
+    /// - **401** maps to "re-enter the AI key" — the credential was rejected.
+    var displayReason: String {
+        switch self {
+        case let .missingAPIKey(provider):
+            return "no API key for \(provider)"
+        case let .invalidBaseURL(provider):
+            return "invalid base URL for \(provider)"
+        case .requestEncodingFailed:
+            return "the request could not be encoded"
+        case let .httpStatus(code, _):
+            switch code {
+            case 404:
+                return "the selected model isn't available on this provider — choose a different model in Settings"
+            case 401:
+                return "the AI key was rejected — re-enter it in Settings → AI model"
+            default:
+                return "the model service returned HTTP \(code)"
+            }
+        case let .malformedResponse(detail):
+            return detail
+        case let .streamDecodingFailed(detail):
+            return "the model stream could not be read (\(detail))"
+        case let .structuredOutputUnrepairable(detail):
+            return "the model's output could not be parsed (\(detail))"
+        case let .refused(detail):
+            return "the model refused to answer (\(detail))"
+        case .cancelled:
+            return "the request was cancelled"
+        }
+    }
+}
+
 extension LLMError {
     /// Maps a ``TransportError`` from the injected transport into the matching ``LLMError``.
     static func from(_ transportError: TransportError) -> LLMError {

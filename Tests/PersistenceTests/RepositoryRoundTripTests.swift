@@ -204,6 +204,38 @@ struct RepositoryRoundTripTests {
         #expect(try await repo.space(forKey: "personal") == nil)
     }
 
+    @Test("Space deletes by stable key, leaving others intact")
+    func spaceDeleteByKey() async throws {
+        let manager = try DatabaseManager.inMemory()
+        let repo = SpaceRepository(queue: manager.queue)
+
+        try await repo.save(Space(key: "work", displayName: "Work"))
+        try await repo.save(Space(key: "personal", displayName: "Personal"))
+
+        // Deleting an absent key removes nothing and reports false.
+        #expect(try await repo.delete(key: "missing") == false)
+        #expect(try await repo.all().count == 2)
+
+        // Deleting an existing key removes exactly that space.
+        #expect(try await repo.delete(key: "personal"))
+        #expect(try await repo.space(forKey: "personal") == nil)
+        #expect(try await repo.space(forKey: "work") != nil)
+        #expect(try await repo.all().count == 1)
+    }
+
+    @Test("deleteConnection(id:) removes the connection and its accounts")
+    func connectionDeleteByIdAlias() async throws {
+        let manager = try DatabaseManager.inMemory()
+        let repo = ConnectionRepository(queue: manager.queue)
+        let connection = makeConnection()
+        try await repo.save(connection)
+
+        #expect(try await repo.deleteConnection(id: connection.id))
+        #expect(try await repo.connection(id: connection.id) == nil)
+        // A second delete of the same id is a no-op (false).
+        #expect(try await repo.deleteConnection(id: connection.id) == false)
+    }
+
     // MARK: - Settings
 
     @Test("SettingsStore typed get/set round-trips, including removal and dates")

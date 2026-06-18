@@ -383,31 +383,8 @@ public struct Synthesizer: Sendable {
 
 // MARK: - LLMError display
 
-private extension LLMError {
-    /// A short, secret-free reason string for ``PipelineError/synthesisFailed(reason:)``.
-    ///
-    /// Deliberately avoids echoing `httpStatus.body` (provider error payloads may
-    /// carry sensitive detail) and never includes the request body.
-    var displayReason: String {
-        switch self {
-        case let .missingAPIKey(provider):
-            return "no API key for \(provider)"
-        case let .invalidBaseURL(provider):
-            return "invalid base URL for \(provider)"
-        case .requestEncodingFailed:
-            return "the request could not be encoded"
-        case let .httpStatus(code, _):
-            return "the model service returned HTTP \(code)"
-        case let .malformedResponse(detail):
-            return detail
-        case let .streamDecodingFailed(detail):
-            return "the model stream could not be read (\(detail))"
-        case let .structuredOutputUnrepairable(detail):
-            return "the model's output could not be parsed (\(detail))"
-        case let .refused(detail):
-            return "the model refused to answer (\(detail))"
-        case .cancelled:
-            return "the request was cancelled"
-        }
-    }
-}
+//
+// `LLMError.displayReason` (a public, secret-free reason string) lives in `LLMKit`
+// alongside the error; it spells out the actionable HTTP statuses (404 → choose a
+// different model; 401 → re-enter the key). `synthesize(_:)` uses it directly when
+// folding an `LLMError` into `PipelineError.synthesisFailed(reason:)`.

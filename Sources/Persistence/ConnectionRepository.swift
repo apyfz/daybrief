@@ -74,4 +74,12 @@ public struct ConnectionRepository: Sendable {
             try ConnectionRecord.deleteOne(db, key: key)
         }
     }
+
+    /// Deletes the connection with the given id (and, via the wholesale account
+    /// replacement, all of its accounts). A spelled-out alias of ``delete(id:)``
+    /// for call sites that want the intent in the name.
+    @discardableResult
+    public func deleteConnection(id: UUID) async throws -> Bool {
+        try await delete(id: id)
+    }
 }

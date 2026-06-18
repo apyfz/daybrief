@@ -27,6 +27,10 @@ public struct SettingsView: View {
                     ConnectionsSection(model: model)
                 }
 
+                SettingsSection(title: "Spaces", systemImage: "square.grid.2x2") {
+                    SpacesSection(model: model)
+                }
+
                 SettingsSection(title: "AI model", systemImage: "sparkles") {
                     ModelSection(model: model)
                 }
@@ -157,13 +161,15 @@ private struct ConnectionsSection: View {
     }
 }
 
-/// One account row: icon, label, connection name, and its Space picker.
+/// One account row: icon, label, connection name, its Space picker, and a
+/// destructive Remove button (confirmation-gated).
 private struct ConnectionRow: View {
     @Bindable var model: AppModel
     let connection: Connection
     let account: Account
 
     @State private var selection: String
+    @State private var confirmingRemove = false
 
     init(model: AppModel, connection: Connection, account: Account) {
         self.model = model
@@ -200,6 +206,28 @@ private struct ConnectionRow: View {
             .onChange(of: selection) { _, newValue in
                 Task { await model.setSpace(accountID: account.id, to: newValue) }
             }
+
+            Button {
+                confirmingRemove = true
+            } label: {
+                Image(systemName: "trash")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.red.opacity(0.85))
+            }
+            .buttonStyle(.plain)
+            .help("Remove this account")
+            .confirmationDialog(
+                "Remove \(account.label)?",
+                isPresented: $confirmingRemove,
+                titleVisibility: .visible
+            ) {
+                Button("Remove", role: .destructive) {
+                    Task { await model.removeAccount(accountID: account.id) }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This disconnects the account and deletes its saved credentials. You can reconnect it later.")
+            }
         }
     }
 
@@ -210,6 +238,104 @@ private struct ConnectionRow: View {
         case .slack: "number"
         default: "app.connected.to.app.below.fill"
         }
+    }
+}
+
+// MARK: - Spaces
+
+/// Lists each space with a Remove (trash) button — disabled when only one space
+/// remains — plus an "Add space" row that creates a new space from a typed name.
+/// Removing a space re-files its accounts under another space (handled in the model).
+private struct SpacesSection: View {
+    @Bindable var model: AppModel
+
+    @State private var newSpaceName = ""
+    @State private var confirmingRemoval: Space?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            ForEach(model.spaces) { space in
+                if space != model.spaces.first {
+                    Divider().overlay(DaybriefTheme.ink.opacity(0.06))
+                }
+                spaceRow(space)
+            }
+
+            Divider().overlay(DaybriefTheme.ink.opacity(0.06))
+            addSpaceRow
+        }
+        .confirmationDialog(
+            "Remove “\(confirmingRemoval?.displayName ?? "")”?",
+            isPresented: removalDialogBinding,
+            titleVisibility: .visible
+        ) {
+            Button("Remove", role: .destructive) {
+                if let space = confirmingRemoval {
+                    Task { await model.removeSpace(key: space.key) }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Accounts in this space move to another space. This can't be undone.")
+        }
+    }
+
+    private func spaceRow(_ space: Space) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: "square.grid.2x2")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(DaybriefTheme.ink)
+                .frame(width: 28, height: 28)
+                .background(DaybriefTheme.accent.opacity(0.3), in: RoundedRectangle(cornerRadius: 7))
+
+            Text(space.displayName)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(DaybriefTheme.ink)
+
+            Spacer(minLength: 12)
+
+            Button {
+                confirmingRemoval = space
+            } label: {
+                Image(systemName: "trash")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.red.opacity(model.spaces.count > 1 ? 0.85 : 0.3))
+            }
+            .buttonStyle(.plain)
+            .disabled(model.spaces.count <= 1)
+            .help(model.spaces.count > 1 ? "Remove this space" : "Keep at least one space")
+        }
+    }
+
+    private var addSpaceRow: some View {
+        HStack(spacing: 12) {
+            TextField("New space name", text: $newSpaceName)
+                .textFieldStyle(.roundedBorder)
+                .frame(maxWidth: 240)
+                .onSubmit { addSpace() }
+
+            DBSecondaryButton("Add space", systemImage: "plus") {
+                addSpace()
+            }
+            .disabled(newSpaceName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func addSpace() {
+        let name = newSpaceName
+        newSpaceName = ""
+        Task { await model.addSpace(displayName: name) }
+    }
+
+    /// Bridges the per-space `confirmingRemoval` selection to a `Bool` the
+    /// `confirmationDialog(isPresented:)` overload needs.
+    private var removalDialogBinding: Binding<Bool> {
+        Binding(
+            get: { confirmingRemoval != nil },
+            set: { presented in if !presented { confirmingRemoval = nil } }
+        )
     }
 }
 
