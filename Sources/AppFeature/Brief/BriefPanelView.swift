@@ -41,9 +41,15 @@ public struct BriefPanelView: View {
 
     /// The fixed panel width — a single column, like a printed page.
     private let panelWidth: CGFloat = 380
-    /// Cap the edition's height so a long brief scrolls instead of overflowing the
-    /// screen; shorter editions (e.g. a quiet day) let the panel shrink to fit.
-    private static let maxEditionHeight: CGFloat = 600
+    /// The tallest the edition can grow before it has to scroll. The panel sizes to its
+    /// content and only scrolls when the content would exceed the screen — so most briefs
+    /// show in full with no inner scrolling. `visibleFrame` already excludes the menu bar;
+    /// the margin leaves room for the header bar + the popover's own chrome so it never
+    /// runs flush to the screen edge.
+    private var maxEditionHeight: CGFloat {
+        let available = NSScreen.main?.visibleFrame.height ?? 800
+        return max(360, available - 120)
+    }
 
     public var body: some View {
         VStack(spacing: 0) {
@@ -241,10 +247,12 @@ public struct BriefPanelView: View {
         .padding(.top, 16)
         .padding(.bottom, 22)
 
-        // Size the panel to the edition's measured content height, capped so a long
-        // brief scrolls within the cap. A plain ScrollView/ViewThatFits collapses to
-        // zero inside a self-sizing menu-bar popover (it gets no height proposal), so
-        // we measure the content and set the height explicitly.
+        // Size the panel to the edition's measured content height so it shows in full,
+        // only scrolling when the content would be taller than the screen. A plain
+        // ScrollView/ViewThatFits collapses to zero inside a self-sizing menu-bar popover
+        // (it gets no height proposal), so we measure the content and set the height
+        // explicitly. The initial placeholder is modest to avoid a tall first-frame flash
+        // before the measured height lands.
         return ScrollView {
             editionBody
                 .onGeometryChange(for: CGFloat.self) { proxy in
@@ -253,7 +261,7 @@ public struct BriefPanelView: View {
                     editionHeight = height
                 }
         }
-        .frame(height: editionHeight == 0 ? Self.maxEditionHeight : min(editionHeight, Self.maxEditionHeight))
+        .frame(height: editionHeight == 0 ? min(maxEditionHeight, 500) : min(editionHeight, maxEditionHeight))
     }
 
     /// The intentional, calm "quiet day" state: a brief exists but holds no
