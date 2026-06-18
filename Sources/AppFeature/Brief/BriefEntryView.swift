@@ -1,0 +1,66 @@
+import BriefRender
+import DaybriefCore
+import SwiftUI
+
+/// A single editorial item: a serif headline, a paragraph of context written as
+/// if the assistant has read the source threads, and a playful golden starburst
+/// CTA badge ("Let's do it →") that opens the originating link.
+///
+/// The badge is only shown when the entry has a link-safe URL to open; entries
+/// without a destination still render their headline + context cleanly.
+struct BriefEntryView: View {
+    /// The presentation-ready entry from ``BriefRenderer``.
+    let entry: BriefViewModel.Entry
+    /// The CTA label to print on the badge (e.g. "Let's do it"); defaults sensibly.
+    let ctaLabel: String
+    /// The edition's accent, sampled from its hero painting; defaults to the golden accent.
+    var accent: Color = DaybriefTheme.accent
+    /// Whether the CTA badge may use the macOS 26 Liquid Glass rendering. The offscreen
+    /// snapshot tool sets this `false` (`ImageRenderer` can't rasterize Liquid Glass).
+    var usesGlassCTA: Bool = true
+    /// Called with the entry's id when the user dismisses it. Defaults to a no-op so
+    /// snapshots and previews need not supply one.
+    var onDismiss: (UUID) -> Void = { _ in }
+
+    @Environment(\.openURL) private var openURL
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(entry.headline)
+                .font(DaybriefTheme.serifDisplay(18))
+                .foregroundStyle(DaybriefTheme.ink)
+                .fixedSize(horizontal: false, vertical: true)
+                // Keep the headline clear of the top-right dismiss control.
+                .padding(.trailing, 20)
+
+            if let detail = entry.detail {
+                // Body copy is set in the Geist sans (the headline stays serif), with a
+                // little extra leading so the paragraph reads easily.
+                Text(detail)
+                    .font(DaybriefTheme.sansBody(11.5))
+                    .foregroundStyle(DaybriefTheme.inkSecondary)
+                    .lineSpacing(1)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if let link = entry.link {
+                Button {
+                    openURL(link)
+                } label: {
+                    ActionBadge(label: ctaLabel, accent: accent, forcesFallback: !usesGlassCTA)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(ctaLabel): \(entry.headline)")
+                .accessibilityHint(entry.linkLabel.map { "Opens \($0)" } ?? "Opens the source")
+                .padding(.top, 2)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        // A subtle dismiss control in the top-right corner of the entry card.
+        .overlay(alignment: .topTrailing) {
+            DismissCardButton(accessibilityLabel: "Dismiss: \(entry.headline)") {
+                onDismiss(entry.id)
+            }
+        }
+    }
+}

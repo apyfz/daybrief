@@ -1,0 +1,84 @@
+name: Daybrief
+
+options:
+  bundleIdPrefix: co.daybrief
+  deploymentTarget:
+    macOS: "26.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "6.2"
+    SWIFT_STRICT_CONCURRENCY: complete
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    # Local dev + distribution both use automatic signing with the builder's own
+    # DEVELOPMENT_TEAM, supplied at build time (xcodebuild DEVELOPMENT_TEAM=…) or via
+    # an untracked xcconfig — so no team ID is committed. The widget's App Group needs
+    # a real team; an empty team cannot build/register the widget (see docs/build/widget.md).
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: ""
+    # Single source of truth for the App Group id, team-prefixed at build time via the
+    # Apple-provided $(TeamIdentifierPrefix) so the literal team ID never lands in any
+    # tracked entitlements/Info.plist. Consumed by both targets' entitlements + Info.plists.
+    DAYBRIEF_APP_GROUP: $(TeamIdentifierPrefix)co.daybrief.shared
+
+packages:
+  # The local Swift package at the repo root. The thin app target links its
+  # `AppFeature` product, which transitively pulls in every other module.
+  Daybrief:
+    path: .
+
+targets:
+  Daybrief:
+    type: application
+    platform: macOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: App
+        excludes:
+          - "Widget"
+    dependencies:
+      - package: Daybrief
+        product: AppFeature
+      # Embeds the widget .appex into Contents/PlugIns so WidgetKit can discover it.
+      - target: DaybriefWidget
+        embed: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: co.daybrief.app
+        PRODUCT_NAME: Daybrief
+        INFOPLIST_FILE: App/Info.plist
+        CODE_SIGN_ENTITLEMENTS: App/Daybrief.entitlements
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        COMBINE_HIDPI_IMAGES: YES
+        ENABLE_HARDENED_RUNTIME: NO
+        INFOPLIST_KEY_NSHumanReadableCopyright: "Copyright © 2026 Crispy Studio."
+
+  # The desktop widget. A real Xcode app-extension target (NOT an SPM executable —
+  # macOS 26 has a WidgetBundle.main runloop bug for SPM-wrapped appex). It must be
+  # App-Sandboxed (the host is not) to register with the widget system. For the
+  # signing/registration spike it links nothing and renders a placeholder; the real
+  # GRDB-free deps (DaybriefCore, BriefRender, DaybriefUI) are added once the spike passes.
+  DaybriefWidget:
+    type: app-extension
+    platform: macOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: App/Widget
+    dependencies:
+      # GRDB-free products only — the sandboxed widget must never link the database stack.
+      - package: Daybrief
+        product: DaybriefCore
+      - package: Daybrief
+        product: BriefRender
+      - package: Daybrief
+        product: DaybriefUI
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: co.daybrief.app.widget
+        PRODUCT_NAME: DaybriefWidget
+        INFOPLIST_FILE: App/Widget/Info.plist
+        CODE_SIGN_ENTITLEMENTS: App/DaybriefWidget.entitlements
+        ENABLE_HARDENED_RUNTIME: NO

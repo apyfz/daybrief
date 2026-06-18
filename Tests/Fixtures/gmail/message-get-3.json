@@ -1,0 +1,14 @@
+{
+  "id": "18f0a1b2c3d4bbbb",
+  "threadId": "18f0a1b2c3d4bbbb",
+  "labelIds": ["UNREAD", "INBOX"],
+  "snippet": "(no body preview available)",
+  "internalDate": "1780980000000",
+  "sizeEstimate": 2048,
+  "payload": {
+    "headers": [
+      { "name": "From", "value": "noreply@status.example" },
+      { "name": "Date", "value": "Tue, 17 Jun 2026 04:10:00 -0700" }
+    ]
+  }
+}

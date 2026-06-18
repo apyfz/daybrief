@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>Daybrief</string>
+	<key>CFBundleDisplayName</key>
+	<string>Daybrief</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>26.0</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>Copyright © 2026 Crispy Studio.</string>
+	<!-- Resolved (literal) App Group id, read at runtime so no team ID is hardcoded. -->
+	<key>AppGroupIdentifier</key>
+	<string>$(DAYBRIEF_APP_GROUP)</string>
+	<!-- Custom scheme so a widget's deep link (daybrief://…) can route into the
+	     accessory app and bring it forward. Handled by .onOpenURL in DaybriefApp. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>co.daybrief.app</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>daybrief</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

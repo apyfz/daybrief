@@ -1,0 +1,19 @@
+{
+  "ok": true,
+  "channel": {
+    "id": "D03DIRECT",
+    "created": 1700000000,
+    "is_im": true,
+    "is_org_shared": false,
+    "user": "U04SAM",
+    "last_read": "1750120000.000100",
+    "latest": {
+      "type": "message",
+      "user": "U04SAM",
+      "text": "Hey, are we still on for the 2pm sync?",
+      "ts": "1750120000.000100"
+    },
+    "unread_count": 0,
+    "unread_count_display": 0
+  }
+}

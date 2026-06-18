@@ -1,0 +1,27 @@
+{
+  "ok": true,
+  "channels": [
+    {
+      "id": "D03DIRECT",
+      "created": 1700000000,
+      "is_im": true,
+      "is_mpim": false,
+      "is_org_shared": false,
+      "user": "U04SAM",
+      "is_user_deleted": false,
+      "priority": 0
+    },
+    {
+      "id": "G05GROUP",
+      "created": 1700001000,
+      "is_im": false,
+      "is_mpim": true,
+      "is_group": true,
+      "name": "mpdm-alim--sam--dana-1",
+      "is_org_shared": false
+    }
+  ],
+  "response_metadata": {
+    "next_cursor": ""
+  }
+}

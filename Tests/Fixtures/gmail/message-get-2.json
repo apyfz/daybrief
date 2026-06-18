@@ -1,0 +1,15 @@
+{
+  "id": "18f0a1b2c3d4aaaa",
+  "threadId": "18f0a1b2c3d4aaaa",
+  "labelIds": ["IMPORTANT", "INBOX"],
+  "snippet": "Reminder: your quarterly invoice is attached. No action needed if the card on file is current.",
+  "internalDate": "1780990000000",
+  "sizeEstimate": 5120,
+  "payload": {
+    "headers": [
+      { "name": "From", "value": "Billing <billing@vendor.example>" },
+      { "name": "Subject", "value": "Q2 invoice" },
+      { "name": "Date", "value": "Tue, 17 Jun 2026 06:42:00 -0700" }
+    ]
+  }
+}

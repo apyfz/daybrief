@@ -1,0 +1,13 @@
+{
+  "images" : [
+    {
+      "filename" : "sisley-marly-le-roi.jpg",
+      "idiom" : "universal",
+      "scale" : "1x"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}

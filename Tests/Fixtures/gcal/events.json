@@ -1,0 +1,143 @@
+{
+  "kind": "calendar#events",
+  "summary": "alim@crispy.studio",
+  "timeZone": "America/Los_Angeles",
+  "items": [
+    {
+      "kind": "calendar#event",
+      "id": "evt_standup_20260617",
+      "status": "confirmed",
+      "htmlLink": "https://www.google.com/calendar/event?eid=evt_standup_20260617",
+      "summary": "Engineering Standup",
+      "description": "Daily sync. Bring blockers.",
+      "location": "Zoom",
+      "start": {
+        "dateTime": "2026-06-17T09:30:00-07:00",
+        "timeZone": "America/Los_Angeles"
+      },
+      "end": {
+        "dateTime": "2026-06-17T09:45:00-07:00",
+        "timeZone": "America/Los_Angeles"
+      },
+      "organizer": {
+        "email": "alim@crispy.studio",
+        "displayName": "Alim",
+        "self": true
+      },
+      "attendees": [
+        {
+          "email": "alim@crispy.studio",
+          "displayName": "Alim",
+          "responseStatus": "accepted",
+          "self": true
+        },
+        {
+          "email": "jesse@crispy.studio",
+          "displayName": "Jesse",
+          "responseStatus": "accepted"
+        },
+        {
+          "email": "no-name@crispy.studio",
+          "responseStatus": "needsAction"
+        }
+      ],
+      "hangoutLink": "https://meet.google.com/abc-defg-hij"
+    },
+    {
+      "kind": "calendar#event",
+      "id": "evt_holiday_20260617",
+      "status": "confirmed",
+      "htmlLink": "https://www.google.com/calendar/event?eid=evt_holiday_20260617",
+      "summary": "Company Offsite Day",
+      "start": {
+        "date": "2026-06-17"
+      },
+      "end": {
+        "date": "2026-06-18"
+      },
+      "organizer": {
+        "email": "ops@crispy.studio",
+        "displayName": "Operations"
+      }
+    },
+    {
+      "kind": "calendar#event",
+      "id": "evt_review_20260618",
+      "status": "confirmed",
+      "htmlLink": "https://www.google.com/calendar/event?eid=evt_review_20260618",
+      "summary": "Design Review",
+      "description": "Walk through the brief panel layout.",
+      "start": {
+        "dateTime": "2026-06-18T14:00:00-07:00",
+        "timeZone": "America/Los_Angeles"
+      },
+      "end": {
+        "dateTime": "2026-06-18T15:00:00-07:00",
+        "timeZone": "America/Los_Angeles"
+      },
+      "attendees": [
+        {
+          "email": "design@crispy.studio",
+          "displayName": "Design Team",
+          "responseStatus": "accepted"
+        }
+      ]
+    },
+    {
+      "kind": "calendar#event",
+      "id": "evt_interview_20260617",
+      "status": "confirmed",
+      "htmlLink": "https://www.google.com/calendar/event?eid=evt_interview_20260617",
+      "summary": "Candidate Interview",
+      "description": "Pairing session.",
+      "start": {
+        "dateTime": "2026-06-17T15:00:00-07:00",
+        "timeZone": "America/Los_Angeles"
+      },
+      "end": {
+        "dateTime": "2026-06-17T16:00:00-07:00",
+        "timeZone": "America/Los_Angeles"
+      },
+      "attendees": [
+        {
+          "email": "alim@crispy.studio",
+          "displayName": "Alim",
+          "responseStatus": "needsAction",
+          "self": true
+        },
+        {
+          "email": "candidate@example.com",
+          "displayName": "Candidate",
+          "responseStatus": "accepted"
+        }
+      ],
+      "conferenceData": {
+        "entryPoints": [
+          {
+            "entryPointType": "video",
+            "uri": "https://meet.google.com/xyz-abcd-efg"
+          },
+          {
+            "entryPointType": "phone",
+            "uri": "tel:+1-555-0100"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "calendar#event",
+      "id": "evt_cancelled_20260617",
+      "status": "cancelled",
+      "htmlLink": "https://www.google.com/calendar/event?eid=evt_cancelled_20260617",
+      "summary": "Cancelled 1:1",
+      "start": {
+        "dateTime": "2026-06-17T11:00:00-07:00",
+        "timeZone": "America/Los_Angeles"
+      },
+      "end": {
+        "dateTime": "2026-06-17T11:30:00-07:00",
+        "timeZone": "America/Los_Angeles"
+      }
+    }
+  ]
+}

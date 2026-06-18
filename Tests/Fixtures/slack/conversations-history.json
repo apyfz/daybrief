@@ -1,0 +1,28 @@
+{
+  "ok": true,
+  "messages": [
+    {
+      "type": "message",
+      "user": "U04SAM",
+      "text": "Hey, are we still on for the 2pm sync?",
+      "ts": "1750120000.000100"
+    },
+    {
+      "type": "message",
+      "user": "U01ALIM",
+      "text": "Yep, sending the agenda now.",
+      "ts": "1750120100.000200"
+    },
+    {
+      "type": "message",
+      "subtype": "channel_join",
+      "user": "U04SAM",
+      "text": "<@U04SAM> has joined the conversation",
+      "ts": "1750119000.000050"
+    }
+  ],
+  "has_more": false,
+  "response_metadata": {
+    "next_cursor": ""
+  }
+}

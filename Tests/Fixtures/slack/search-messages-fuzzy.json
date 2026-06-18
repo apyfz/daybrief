@@ -1,0 +1,77 @@
+{
+  "ok": true,
+  "query": "after:2026-06-16 @alim",
+  "messages": {
+    "total": 3,
+    "pagination": {
+      "total_count": 3,
+      "page": 1,
+      "per_page": 100,
+      "page_count": 1,
+      "first": 1,
+      "last": 3
+    },
+    "paging": {
+      "count": 100,
+      "total": 3,
+      "page": 1,
+      "pages": 1
+    },
+    "matches": [
+      {
+        "iid": "abc-123-iid",
+        "team": "T01ACME",
+        "channel": {
+          "id": "C01ENG",
+          "is_channel": true,
+          "is_im": false,
+          "is_mpim": false,
+          "name": "engineering",
+          "is_private": false
+        },
+        "type": "message",
+        "user": "U02DANA",
+        "username": "dana",
+        "ts": "1750118400.001500",
+        "text": "<@U01ALIM> can you review the connector PR before standup?",
+        "permalink": "https://acme.slack.com/archives/C01ENG/p1750118400001500"
+      },
+      {
+        "iid": "ghi-789-iid",
+        "team": "T01ACME",
+        "channel": {
+          "id": "C01ENG",
+          "is_channel": true,
+          "is_im": false,
+          "is_mpim": false,
+          "name": "engineering",
+          "is_private": false
+        },
+        "type": "message",
+        "user": "U02DANA",
+        "username": "dana",
+        "ts": "1750118500.001600",
+        "text": "alim shipped a great fix yesterday, no action needed",
+        "permalink": "https://acme.slack.com/archives/C01ENG/p1750118500001600"
+      },
+      {
+        "iid": "jkl-012-iid",
+        "team": "T01ACME",
+        "channel": {
+          "id": "C02RANDOM",
+          "is_channel": true,
+          "is_im": false,
+          "is_mpim": false,
+          "name": "random",
+          "is_private": false
+        },
+        "type": "message",
+        "user": "U06BORIS",
+        "username": "boris",
+        "ts": "1750118600.001700",
+        "text": "the alimony deadline moved to Friday",
+        "permalink": "https://acme.slack.com/archives/C02RANDOM/p1750118600001700"
+      }
+    ]
+  }
+}

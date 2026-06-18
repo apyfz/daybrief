@@ -1,0 +1,15 @@
+# macOS
+.DS_Store
+
+# Swift Package Manager (Package.resolved IS committed — this is an app, pin deps)
+.build/
+.swiftpm/
+
+# Xcode / generated project (project.yml is the source of truth — regenerate with `xcodegen generate`)
+Daybrief.xcodeproj/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+
+# Commercial/trial font (Tiempos) — local only, not redistributable
+Sources/DaybriefUI/Fonts/TiemposText-*.ttf
