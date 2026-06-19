@@ -75,6 +75,8 @@ targets:
         product: BriefRender
       - package: Daybrief
         product: DaybriefUI
+      - package: Daybrief
+        product: DaybriefWidgetUI
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: co.daybrief.app.widget

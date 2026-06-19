@@ -39,7 +39,7 @@ struct DaybriefGlanceWidget: Widget {
         }
         .configurationDisplayName("Daybrief")
         .description("Today's brief at a glance.")
-        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
+        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge, .systemExtraLarge])
     }
 }
 

@@ -13,6 +13,9 @@ let package = Package(
         // GRDB-free presentation layer (palette, type scale, fonts, editorial chrome).
         // Linked by both AppFeature and the sandboxed desktop widget extension.
         .library(name: "DaybriefUI", targets: ["DaybriefUI"]),
+        // The size-specific widget layouts, GRDB-free, shared by the widget extension and
+        // the offscreen widget snapshot tool.
+        .library(name: "DaybriefWidgetUI", targets: ["DaybriefWidgetUI"]),
         .library(name: "BriefRender", targets: ["BriefRender"]),
         .library(name: "Pipeline", targets: ["Pipeline"]),
         .library(name: "LLMKit", targets: ["LLMKit"]),
@@ -53,6 +56,11 @@ let package = Package(
         // MARK: - Presentation layer (GRDB-free; shared by the app + the widget)
 
         .target(
+            name: "DaybriefWidgetUI",
+            dependencies: ["DaybriefCore", "BriefRender", "DaybriefUI"]
+        ),
+
+        .target(
             name: "DaybriefUI",
             dependencies: ["DaybriefCore"],
             resources: [
@@ -87,6 +95,13 @@ let package = Package(
         .executableTarget(
             name: "DaybriefSnapshot",
             dependencies: ["AppFeature", "DaybriefCore", "DaybriefUI", "BriefRender"]
+        ),
+
+        // Renders each widget family at its exact point size to a PNG (offscreen, no
+        // device), the way DaybriefSnapshot does for the panel.
+        .executableTarget(
+            name: "DaybriefWidgetSnapshot",
+            dependencies: ["DaybriefWidgetUI", "DaybriefCore", "DaybriefUI", "BriefRender"]
         ),
 
         // MARK: - Tests
