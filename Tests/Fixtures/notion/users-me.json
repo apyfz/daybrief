@@ -1,0 +1,10 @@
+{
+  "object": "user",
+  "id": "bot1",
+  "type": "bot",
+  "name": "Daybrief",
+  "bot": {
+    "owner": { "type": "user", "user": { "object": "user", "id": "me-user" } },
+    "workspace_name": "Acme"
+  }
+}

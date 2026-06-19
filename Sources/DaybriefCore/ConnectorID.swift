@@ -23,6 +23,8 @@ public struct ConnectorID: Sendable, Codable, Equatable, Hashable, RawRepresenta
     public static let gmail = ConnectorID("gmail")
     /// Slack.
     public static let slack = ConnectorID("slack")
+    /// Notion.
+    public static let notion = ConnectorID("notion")
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.singleValueContainer()

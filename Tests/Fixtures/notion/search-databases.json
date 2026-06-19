@@ -1,0 +1,33 @@
+{
+  "object": "list",
+  "results": [
+    {
+      "object": "database",
+      "id": "db1",
+      "title": [ { "type": "text", "plain_text": "Tasks" } ],
+      "properties": {
+        "Name": { "id": "title", "type": "title", "title": {} },
+        "Due": { "id": "due", "type": "date", "date": {} },
+        "Status": {
+          "id": "stat",
+          "type": "status",
+          "status": {
+            "options": [
+              { "id": "o1", "name": "To Do" },
+              { "id": "o2", "name": "In Progress" },
+              { "id": "o3", "name": "Done" }
+            ],
+            "groups": [
+              { "id": "g1", "name": "To-do", "option_ids": ["o1"] },
+              { "id": "g2", "name": "In progress", "option_ids": ["o2"] },
+              { "id": "g3", "name": "Complete", "option_ids": ["o3"] }
+            ]
+          }
+        },
+        "Assignee": { "id": "asg", "type": "people", "people": {} }
+      }
+    }
+  ],
+  "has_more": false,
+  "next_cursor": null
+}

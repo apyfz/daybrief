@@ -43,6 +43,7 @@ let package = Package(
         .target(name: "GoogleCalendarConnector", dependencies: ["ConnectorKit", "DaybriefCore"]),
         .target(name: "GmailConnector", dependencies: ["ConnectorKit", "DaybriefCore"]),
         .target(name: "SlackConnector", dependencies: ["ConnectorKit", "DaybriefCore"]),
+        .target(name: "NotionConnector", dependencies: ["ConnectorKit", "DaybriefCore"]),
 
         // MARK: - Synthesis + render
 
@@ -77,6 +78,7 @@ let package = Package(
             dependencies: [
                 "DaybriefCore", "DaybriefUI", "Pipeline", "Persistence", "Secrets", "LLMKit", "BriefRender",
                 "ConnectorKit", "GoogleCalendarConnector", "GmailConnector", "SlackConnector",
+                "NotionConnector",
             ]
         ),
 
@@ -96,6 +98,7 @@ let package = Package(
         .testTarget(name: "GoogleCalendarConnectorTests", dependencies: ["GoogleCalendarConnector", "ConnectorKit"]),
         .testTarget(name: "GmailConnectorTests", dependencies: ["GmailConnector", "ConnectorKit"]),
         .testTarget(name: "SlackConnectorTests", dependencies: ["SlackConnector", "ConnectorKit"]),
+        .testTarget(name: "NotionConnectorTests", dependencies: ["NotionConnector", "ConnectorKit"]),
         .testTarget(name: "LLMKitTests", dependencies: ["LLMKit"]),
         .testTarget(name: "BriefRenderTests", dependencies: ["BriefRender", "DaybriefCore"]),
         .testTarget(name: "PipelineTests", dependencies: ["Pipeline", "ConnectorKit", "LLMKit"]),

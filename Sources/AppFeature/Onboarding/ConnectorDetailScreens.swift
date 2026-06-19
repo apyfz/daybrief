@@ -7,6 +7,7 @@ enum OnboardingConnector: Identifiable, CaseIterable {
     case calendar
     case gmail
     case slack
+    case notion
 
     var id: Self {
         self
@@ -18,6 +19,7 @@ enum OnboardingConnector: Identifiable, CaseIterable {
         case .calendar: "calendar"
         case .gmail: "envelope"
         case .slack: "number"
+        case .notion: "checklist"
         }
     }
 
@@ -27,6 +29,7 @@ enum OnboardingConnector: Identifiable, CaseIterable {
         case .calendar: "Google Calendar"
         case .gmail: "Gmail"
         case .slack: "Slack"
+        case .notion: "Notion"
         }
     }
 
@@ -36,6 +39,7 @@ enum OnboardingConnector: Identifiable, CaseIterable {
         case .calendar: "Today and tomorrow's events"
         case .gmail: "Unread and important mail from the last day"
         case .slack: "@-mentions and DMs from the last day"
+        case .notion: "Tasks due today or overdue"
         }
     }
 
@@ -45,6 +49,7 @@ enum OnboardingConnector: Identifiable, CaseIterable {
         case .calendar: .gcal
         case .gmail: .gmail
         case .slack: .slack
+        case .notion: .notion
         }
     }
 }
@@ -601,6 +606,135 @@ struct SlackConnectorScreen: View {
     }
 }
 
+// MARK: - Notion
+
+/// A dedicated screen for connecting Notion via a pasted internal-integration secret,
+/// split into short friendly parts. Unlike Slack, there's no database to pick or
+/// columns to map — Daybrief auto-discovers task-shaped databases among the ones the
+/// user shares with the integration.
+struct NotionConnectorScreen: View {
+    @Bindable var model: AppModel
+    let connector: OnboardingConnector
+    let onClose: () -> Void
+
+    @State private var token = ""
+    @State private var workspaceLabel = ""
+    @State private var isConnecting = false
+
+    private static let integrationsURL = URL(string: "https://www.notion.so/my-integrations")!
+
+    private static let part1Steps: [DBStep] = [
+        DBStep(
+            "Open Notion's integrations page and sign in.",
+            link: ("Open Notion integrations", integrationsURL)
+        ),
+        DBStep("Click “New integration.” Give it a name (e.g. Daybrief)."),
+    ]
+
+    private static let part2Steps: [DBStep] = [
+        DBStep("For “Authentication method,” choose “Access token” (a workspace-scoped token — not OAuth). Under “Installable in,” pick your workspace, then save."),
+        DBStep("Open the integration and copy its access token — it starts with ntn_. Paste it below."),
+    ]
+
+    private static let part3Steps: [DBStep] = [
+        DBStep(
+            "Open the Notion database that holds your tasks. Click the “•••” menu (top-right) → “Connections” → choose your integration. Repeat for any other database you want in your brief.",
+            emphasized: true
+        ),
+    ]
+
+    var body: some View {
+        ConnectorDetailScaffold(onClose: onClose, lastError: model.lastError) {
+            ConnectorScreenHeader(
+                connector: connector,
+                brings: "Brings your Notion tasks that are due today or overdue (and not yet done) into your brief."
+            )
+
+            ConnectorIntroLine(text: "About two minutes, once. You choose what Daybrief sees by which databases you share with the integration.")
+
+            DBDetailSection(title: "What Daybrief will read") {
+                DBScopeRow(scope: "Read content", why: "Read the databases you share with the integration to find tasks due today or overdue. Daybrief never writes anything back.")
+            }
+
+            DBDetailSection(title: "Part 1 · Create your integration") {
+                DBStepList(steps: Self.part1Steps)
+            }
+            DBDetailSection(title: "Part 2 · Get your access token") {
+                DBStepList(steps: Self.part2Steps)
+            }
+            DBDetailSection(title: "Part 3 · Share your task database") {
+                DBStepList(steps: Self.part3Steps)
+            }
+
+            DBDetailSection(title: "Part 4 · Paste it into Daybrief") {
+                DBLabeledField(label: "Workspace name", placeholder: "e.g. Crispy Studio", text: $workspaceLabel)
+                DBLabeledField(label: "Integration secret", placeholder: "ntn_… or secret_…", isSecure: true, text: $token)
+                if hasToken, !tokenLooksValid {
+                    Text("That doesn't look like an integration secret — it should start with ntn_ or secret_.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(DaybriefTheme.inkSecondary)
+                }
+            }
+
+            ExpectScreenCallout(
+                title: "Don't forget to share your database",
+                message: "An integration starts with access to nothing. Until you connect it to your task database (Part 3), Daybrief will see no tasks — even with a valid secret. Share only the databases you want briefed; the rest stay private."
+            )
+        } footer: {
+            HStack(spacing: 10) {
+                if isConnected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(DaybriefTheme.ink)
+                        .accessibilityHidden(true)
+                    Text("Connected\(connectedLabel.map { " · \($0)" } ?? "")")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(DaybriefTheme.ink)
+                }
+                Spacer()
+                DBPrimaryButton(
+                    title: isConnecting ? "Connecting…" : (isConnected ? "Reconnect" : "Connect Notion"),
+                    isBusy: isConnecting
+                ) {
+                    Task { await connect() }
+                }
+                .disabled(isConnecting || !tokenLooksValid)
+            }
+        }
+    }
+
+    private var hasToken: Bool {
+        !token.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    /// Accepts both the newer `ntn_` and legacy `secret_` integration secrets.
+    private var tokenLooksValid: Bool {
+        let trimmed = token.trimmingCharacters(in: .whitespaces)
+        return trimmed.hasPrefix("ntn_") || trimmed.hasPrefix("secret_")
+    }
+
+    private var isConnected: Bool {
+        model.connections.contains { $0.connectorId == .notion && !$0.accounts.isEmpty }
+    }
+
+    private var connectedLabel: String? {
+        model.connections
+            .first { $0.connectorId == .notion && !$0.accounts.isEmpty }?
+            .accounts.first?.label
+    }
+
+    private func connect() async {
+        isConnecting = true
+        defer { isConnecting = false }
+        let label = workspaceLabel.trimmingCharacters(in: .whitespaces)
+        await model.connectNotion(
+            token: token.trimmingCharacters(in: .whitespaces),
+            workspaceLabel: label.isEmpty ? "Notion" : label,
+            space: defaultSpaceKey(model)
+        )
+        if isConnected { onClose() }
+    }
+}
+
 // MARK: - Routed detail
 
 /// Routes the hub's selected ``OnboardingConnector`` to the right dedicated screen,
@@ -618,6 +752,8 @@ struct ConnectorDetailScreen: View {
             GoogleConnectorScreen(model: model, connectorID: .gmail, connector: connector, onClose: onClose)
         case .slack:
             SlackConnectorScreen(model: model, connector: connector, onClose: onClose)
+        case .notion:
+            NotionConnectorScreen(model: model, connector: connector, onClose: onClose)
         }
     }
 }

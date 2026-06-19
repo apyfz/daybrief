@@ -449,6 +449,45 @@ public final class AppModel {
         }
     }
 
+    /// Connects Notion from a pasted internal-integration secret, replacing any existing
+    /// Notion account (single integration per workspace). Mirrors ``connectSlack(...)``.
+    public func connectNotion(token: String, workspaceLabel: String, space: String) async {
+        lastError = nil
+        do {
+            // Single integration: clear any existing Notion accounts (token refs) before
+            // adding the new one, so a reconnect never leaves a duplicate behind.
+            let existingNotionAccounts = connections
+                .filter { $0.connectorId == .notion }
+                .flatMap(\.accounts)
+            for account in existingNotionAccounts {
+                await deleteAccountSecrets(accountID: account.id, connector: .notion)
+            }
+            if let notionConnection = connections.first(where: { $0.connectorId == .notion }) {
+                try await environment.connectionRepository.deleteConnection(id: notionConnection.id)
+            }
+
+            let accountID = UUID()
+            let tokenRef = AccountSecrets.tokenRef(for: accountID, connector: .notion)
+            try await environment.keychain.setString(token, for: tokenRef)
+
+            let account = Account(
+                id: accountID,
+                connectorId: .notion,
+                label: workspaceLabel,
+                spaceKey: space,
+                secretRef: tokenRef
+            )
+            // Reload so `upsertAccount` sees the cleared state and creates a fresh
+            // single-account Notion connection rather than reusing the stale in-memory one.
+            await reloadConnections()
+            try await upsertAccount(account, connectorId: .notion, connectionName: "Notion")
+            await reloadConnections()
+        } catch {
+            lastError = "Could not connect Notion."
+            Self.logger.error("connectNotion failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
     /// Removes the connected account with `accountID`.
     ///
     /// Finds the owning connection and drops that account: if it was the connection's

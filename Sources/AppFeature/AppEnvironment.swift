@@ -4,6 +4,7 @@ import Foundation
 import GmailConnector
 import GoogleCalendarConnector
 import LLMKit
+import NotionConnector
 import Persistence
 import Pipeline
 import Secrets
@@ -113,7 +114,7 @@ public struct AppEnvironment: Sendable {
 
     // MARK: - Connector registry
 
-    /// Builds a connector registry with all three v0 connectors registered against
+    /// Builds a connector registry with every connector registered against
     /// `tokenProvider`. Enabled flags are applied by the caller from the persisted
     /// connections.
     public func makeRegistry() -> ConnectorRegistry {
@@ -121,6 +122,7 @@ public struct AppEnvironment: Sendable {
             GoogleCalendarConnector(tokenProvider: tokenProvider),
             GmailConnector(tokenProvider: tokenProvider),
             SlackConnector(tokenProvider: tokenProvider),
+            NotionConnector(tokenProvider: tokenProvider),
         ])
     }
 

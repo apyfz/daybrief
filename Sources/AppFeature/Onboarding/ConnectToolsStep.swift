@@ -41,10 +41,10 @@ struct ConnectToolsStep: View {
             .foregroundStyle(DaybriefTheme.inkSecondary)
             .padding(.top, 2)
 
-            Text("Connected \(connectedCount) of 3.")
+            Text("Connected \(connectedCount) of \(OnboardingConnector.allCases.count).")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(DaybriefTheme.inkSecondary)
-                .accessibilityLabel("\(connectedCount) of 3 tools connected.")
+                .accessibilityLabel("\(connectedCount) of \(OnboardingConnector.allCases.count) tools connected.")
         }
         .sheet(item: $selected) { connector in
             ConnectorDetailScreen(model: model, connector: connector) {
@@ -56,11 +56,7 @@ struct ConnectToolsStep: View {
     // MARK: - Status
 
     private func connectorID(for connector: OnboardingConnector) -> ConnectorID {
-        switch connector {
-        case .calendar: .gcal
-        case .gmail: .gmail
-        case .slack: .slack
-        }
+        connector.connectorID
     }
 
     private func isConnected(_ connector: OnboardingConnector) -> Bool {
