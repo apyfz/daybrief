@@ -194,11 +194,12 @@ private struct PaperSheet: ViewModifier {
         content
             .background(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    // Opaque, readable warm page — the brief's literary reading surface.
                     .fill(DaybriefTheme.paper)
             )
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            // A bright top-to-bottom rim sheen so the opaque page reads as a glass-edged
-            // card floating on the Liquid Glass panel, not a flat rectangle.
+            // A bright top-to-bottom rim sheen so the page reads as a glass-edged card
+            // floating on the desktop, not a flat rectangle.
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .strokeBorder(
@@ -210,9 +211,6 @@ private struct PaperSheet: ViewModifier {
                         lineWidth: 1
                     )
             )
-            // A deeper, softer float so the sheet sits clearly above the glass.
-            .shadow(color: DaybriefTheme.ink.opacity(0.13), radius: 18, y: 7)
-            .shadow(color: DaybriefTheme.ink.opacity(0.06), radius: 3, y: 1)
     }
 }
 

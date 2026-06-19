@@ -17,9 +17,6 @@ import SwiftUI
 @MainActor
 public struct BriefPanelView: View {
     @State private var model: AppModel
-    /// Drives the header chrome's color from the wallpaper behind the clear glass, so
-    /// it stays legible (white-on-dark / dark-on-light) like the system menu bar.
-    @State private var backdrop: BackdropMonitor
     /// The measured natural height of the current edition's content, used to size the
     /// panel to its content (capped at ``maxEditionHeight``).
     @State private var editionHeight: CGFloat = 0
@@ -36,22 +33,14 @@ public struct BriefPanelView: View {
 
     public init(
         model: AppModel,
-        backdrop: BackdropMonitor = BackdropMonitor(),
         onClose: @escaping () -> Void = {},
         onOpenSettings: @escaping () -> Void = {},
         onContentHeightChange: @escaping (CGFloat) -> Void = { _ in }
     ) {
         self.model = model
-        _backdrop = State(initialValue: backdrop)
         self.onClose = onClose
         self.onOpenSettings = onOpenSettings
         self.onContentHeightChange = onContentHeightChange
-    }
-
-    /// The header chrome color: white over a dark wallpaper, brand ink over a light one
-    /// (the header sits on clear glass, so it must track the backdrop, not just mode).
-    private var headerForeground: Color {
-        backdrop.isDarkBackdrop ? .white : DaybriefTheme.ink
     }
 
     /// Opens the setup / onboarding / settings window and brings the app forward
@@ -87,20 +76,17 @@ public struct BriefPanelView: View {
             // panel chrome / margins read as Liquid Glass (macOS 26). On the paper
             // fallback the sheet is visually quiet (paper-on-paper with a soft edge).
             content
-                .paperSheet()
-                // A slim Liquid Glass frame around the warm paper card — enough to read as
-                // a glass edge, without a heavy matte border.
+                .paperSheet(cornerRadius: 14)
+                // A slim dark-glass frame around the warm paper card.
                 .padding(.horizontal, 10)
                 .padding(.top, 4)
                 .padding(.bottom, 10)
         }
         .frame(width: panelWidth)
-        // The window's behind-window glass (BriefPanelController's NSGlassEffectView) is
-        // the panel surface — it owns the live Liquid Glass, the rounded corners, and the
-        // native shadow. We only clip our own opaque children (the paper sheet, hero) to
-        // the same radius so they don't square off the masked glass corners; the header
-        // strip and the wide margins around the paper sheet stay transparent and read as
-        // genuine Liquid Glass over the desktop behind the panel.
+        // The window's behind-window glass (BriefPanelController's dark NSGlassEffectView)
+        // is the panel surface. We clip our own children to the same radius so the opaque
+        // paper sheet doesn't square off the rounded glass corners; the header strip and
+        // the margins around the paper sheet stay transparent and read as the dark glass.
         .clipShape(.rect(cornerRadius: 16))
         // Report the card's height up to the controller so it can re-pin the panel
         // whenever content changes (async hero image, refresh swap). This is the proven
@@ -186,16 +172,12 @@ public struct BriefPanelView: View {
     private func headerIcon(_ name: String, size: CGFloat, weight: Font.Weight) -> some View {
         Image(systemName: name)
             .font(.system(size: size, weight: weight))
-            // The header sits on clear glass, so the glyphs track the wallpaper behind it
-            // (white over dark, brand ink over light) rather than just the light/dark mode.
-            .foregroundStyle(headerForeground)
-            .shadow(
-                color: (backdrop.isDarkBackdrop ? Color.black : .white).opacity(0.3),
-                radius: 1.5
-            )
-            .frame(width: 22, height: 22)
-            .contentShape(Rectangle())
-            .animation(.easeInOut(duration: 0.2), value: backdrop.isDarkBackdrop)
+            // White glyph on a dark-gray button so the controls read clearly on the dark
+            // glass header, regardless of the wallpaper behind it.
+            .foregroundStyle(.white)
+            .frame(width: 32, height: 28)
+            .background(Color(white: 0.16), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
     }
 
     /// The thin title strip, e.g. "The Wednesday Brief · June 17".
@@ -406,10 +388,8 @@ private struct GlassToolbarCluster<Content: View>: View {
 /// systems. Keeps the button's action, label, and accessibility intact.
 private struct GlassToolbarButton: ViewModifier {
     func body(content: Content) -> some View {
-        if #available(macOS 26.0, *) {
-            content.buttonStyle(.glass)
-        } else {
-            content.buttonStyle(.plain)
-        }
+        // The button draws its own dark-gray capsule (see `headerIcon`), so use the plain
+        // style rather than the system glass capsule.
+        content.buttonStyle(.plain)
     }
 }

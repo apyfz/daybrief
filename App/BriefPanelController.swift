@@ -33,12 +33,6 @@ final class BriefPanelController: NSObject, NSWindowDelegate {
     /// detached `NSHostingView` can't reach SwiftUI's scene-connected `openWindow`.
     private let openSettings: () -> Void
 
-    /// The header strip's height (top of the card), sampled for backdrop luminance so
-    /// the header chrome flips white-on-dark / dark-on-light over the clear glass.
-    private let headerHeight: CGFloat = 52
-    /// Drives the header foreground from the wallpaper behind the (clear) glass header.
-    private let backdrop = BackdropMonitor()
-
     private var statusItem: NSStatusItem?
     private var panel: NSPanel?
     /// Last height SwiftUI reported for the card; drives the panel height.
@@ -84,23 +78,12 @@ final class BriefPanelController: NSObject, NSWindowDelegate {
         // Esc reaches us, but the app stays an accessory and doesn't steal activation.
         panel.makeKeyAndOrderFront(nil)
         installDismissMonitors()
-        // Watch the wallpaper behind the (clear glass) header so its chrome adapts.
-        backdrop.start { [weak self] in
-            guard let self, let panel = self.panel,
-                  let screen = panel.screen ?? NSScreen.main else { return nil }
-            let f = panel.frame
-            let headerRect = CGRect(
-                x: f.minX, y: f.maxY - headerHeight, width: f.width, height: headerHeight
-            )
-            return (headerRect, screen)
-        }
         statusItem?.button?.highlight(true)
     }
 
     func hide() {
         panel?.orderOut(nil)
         removeDismissMonitors()
-        backdrop.stop()
         statusItem?.button?.highlight(false)
     }
 
@@ -135,36 +118,37 @@ final class BriefPanelController: NSObject, NSWindowDelegate {
             rootView: AnyView(
                 BriefPanelView(
                     model: model,
-                    backdrop: backdrop,
                     onClose: { [weak self] in self?.hide() },
                     onOpenSettings: { [weak self] in self?.openSettings() },
                     onContentHeightChange: { [weak self] height in self?.cardHeightChanged(height) }
                 )
             )
         )
-        host.sizingOptions = [] // the glass sizes its content; we size the window
+        host.sizingOptions = [] // we size the window; SwiftUI fills it
         host.wantsLayer = true
         host.layer?.backgroundColor = NSColor.clear.cgColor
 
-        // The genuine macOS 26 Liquid Glass backing (the refractive Tahoe material, not
-        // the older frosted vibrancy). `.clear` is the transparent variant; no tintColor
-        // so nothing washes the backdrop out. It samples behind the (non-opaque) window
-        // for the live lensing look.
+        // Light Liquid Glass backing: a content-free clear NSGlassEffectView (no tint,
+        // default light appearance) as the background layer, with the warm paper card
+        // floating above it as a transparent sibling — so the glass reads in the margins
+        // and header strip while the reading surface stays paper.
         let glass = NSGlassEffectView()
-        glass.cornerRadius = cornerRadius
         glass.style = .clear
-        glass.contentView = host
+        glass.cornerRadius = cornerRadius
 
-        // Insert the glass as a background LAYER inside a plain container rather than
-        // using it as the window's root contentView. NSGlassEffectView can silently fall
-        // back to a plain frosted blur when it's the root contentView; the layered
-        // embedding is the pattern that reliably renders the clear, refractive material.
         let container = NSView()
         container.wantsLayer = true
+        container.layer?.backgroundColor = NSColor.clear.cgColor
         panel.contentView = container
+
+        // Glass = backmost full-bounds layer; the SwiftUI card rides above it.
         glass.frame = container.bounds
         glass.autoresizingMask = [.width, .height]
         container.addSubview(glass)
+
+        host.frame = container.bounds
+        host.autoresizingMask = [.width, .height]
+        container.addSubview(host, positioned: .above, relativeTo: glass)
 
         return panel
     }
@@ -205,11 +189,8 @@ final class BriefPanelController: NSObject, NSWindowDelegate {
         let newFrame = NSRect(x: originX, y: originY, width: windowWidth, height: windowHeight)
         guard panel.frame != newFrame else { return }
         panel.setFrame(newFrame, display: true)
-        // Recompute the native shadow against the new (masked) bounds so it doesn't lag
-        // the resize for a frame.
+        // Recompute the native shadow against the new bounds so it doesn't lag the resize.
         panel.invalidateShadow()
-        // The header rect moved, so re-sample the wallpaper behind it.
-        backdrop.recompute()
     }
 
     // MARK: - Dismiss-on-outside-click / Esc
