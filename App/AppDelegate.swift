@@ -16,6 +16,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The app model, injected by ``DaybriefApp`` at construction.
     private var model: AppModel?
     private var scheduler: SchedulerCoordinator?
+    /// Owns the menu-bar status item + the floating brief panel (replaces MenuBarExtra).
+    private var panelController: BriefPanelController?
     private static let logger = Logger(subsystem: "co.daybrief.app", category: "AppDelegate")
 
     /// Opens the main settings/onboarding window. Registered by ``DaybriefApp`` once the
@@ -33,7 +35,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// menu-bar popover can't be opened programmatically, so we don't force a window.)
     func application(_: NSApplication, open urls: [URL]) {
         guard urls.contains(where: { $0.scheme?.lowercased() == "daybrief" }) else { return }
+        // The widget is view-only; a tap surfaces the brief panel so the reader can act.
         NSApplication.shared.activate()
+        panelController?.presentPanel()
     }
 
     func applicationDidFinishLaunching(_: Notification) {
@@ -51,6 +55,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Self.logger.error("No app model — environment failed to build at launch")
             return
         }
+
+        // Own the menu-bar status item + floating brief panel ourselves so the panel
+        // can pin to the screen's right edge with a real desktop gap below the menu bar.
+        let panelController = BriefPanelController(
+            model: model,
+            openSettings: { [weak self] in self?.openMainWindow?() }
+        )
+        panelController.install()
+        self.panelController = panelController
 
         // Start the scheduler (registers the wake observer, runs the launch
         // catch-up via `onWakeOrLaunch()`, and arms the next daily timer).

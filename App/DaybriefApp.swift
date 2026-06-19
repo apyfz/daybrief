@@ -37,18 +37,13 @@ struct DaybriefApp: App {
     }
 
     var body: some Scene {
-        // The brief panel lives in the menu bar as a rich, scrollable window.
-        MenuBarExtra("Daybrief", systemImage: "sun.max") {
-            if let model {
-                BriefPanelView(model: model)
-            } else {
-                LaunchErrorView(
-                    message: launchError ?? "Daybrief couldn't start.",
-                    openSettings: { openWindow(id: Self.mainWindowID) }
-                )
-            }
-        }
-        .menuBarExtraStyle(.window)
+        // The brief panel is no longer a `MenuBarExtra` scene: it's a custom status
+        // item + floating panel owned by `AppDelegate` (`BriefPanelController`), so it
+        // can pin to the screen's right edge with a real desktop gap below the menu
+        // bar. The opener registered here gives that AppKit-side panel a reliable way
+        // to open this SwiftUI window (a detached NSHostingView can't reach the
+        // scene-connected `openWindow` itself).
+        let _ = registerWindowOpener()
 
         // The setup / settings window. Opening it promotes the app to a regular
         // (Dock-visible, focusable) app; closing it drops back to accessory so the
@@ -82,6 +77,16 @@ struct DaybriefApp: App {
                     .keyboardShortcut(",", modifiers: .command)
             }
         }
+    }
+
+    /// Captures the scene-connected `openWindow` action into the app delegate so the
+    /// AppKit-owned brief panel (and the widget deep link) can open the settings
+    /// window. Called as a side effect during `body` evaluation — which SwiftUI runs
+    /// at launch — so the opener is live before the user can reach the panel's gear.
+    @discardableResult
+    private func registerWindowOpener() -> Bool {
+        appDelegate.openMainWindow = { openWindow(id: Self.mainWindowID) }
+        return true
     }
 
     /// The id of the standalone setup/settings window (shared with `AppFeature`).

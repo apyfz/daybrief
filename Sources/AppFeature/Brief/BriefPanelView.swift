@@ -17,19 +17,47 @@ import SwiftUI
 @MainActor
 public struct BriefPanelView: View {
     @State private var model: AppModel
-    @Environment(\.openWindow) private var openWindow
+    /// Drives the header chrome's color from the wallpaper behind the clear glass, so
+    /// it stays legible (white-on-dark / dark-on-light) like the system menu bar.
+    @State private var backdrop: BackdropMonitor
     /// The measured natural height of the current edition's content, used to size the
     /// panel to its content (capped at ``maxEditionHeight``).
     @State private var editionHeight: CGFloat = 0
 
-    public init(model: AppModel) {
+    /// Dismisses the panel (close button). Injected because the panel is hosted in an
+    /// AppKit-owned window, not a SwiftUI window we can close via `NSApp.keyWindow`.
+    private let onClose: () -> Void
+    /// Opens the setup / settings window. Injected because a detached `NSHostingView`
+    /// can't reach the scene-connected `openWindow`; the app layer supplies one that can.
+    private let onOpenSettings: () -> Void
+    /// Reports the card's measured height up to the host controller so it can re-pin
+    /// the panel whenever content changes (async hero image, refresh swap).
+    private let onContentHeightChange: (CGFloat) -> Void
+
+    public init(
+        model: AppModel,
+        backdrop: BackdropMonitor = BackdropMonitor(),
+        onClose: @escaping () -> Void = {},
+        onOpenSettings: @escaping () -> Void = {},
+        onContentHeightChange: @escaping (CGFloat) -> Void = { _ in }
+    ) {
         self.model = model
+        _backdrop = State(initialValue: backdrop)
+        self.onClose = onClose
+        self.onOpenSettings = onOpenSettings
+        self.onContentHeightChange = onContentHeightChange
+    }
+
+    /// The header chrome color: white over a dark wallpaper, brand ink over a light one
+    /// (the header sits on clear glass, so it must track the backdrop, not just mode).
+    private var headerForeground: Color {
+        backdrop.isDarkBackdrop ? .white : DaybriefTheme.ink
     }
 
     /// Opens the setup / onboarding / settings window and brings the app forward
     /// (the window scene promotes the app to a regular, focusable app on appear).
     private func openSetup() {
-        openWindow(id: DaybriefWindow.mainID)
+        onOpenSettings()
         NSApp.activate()
     }
 
@@ -60,12 +88,31 @@ public struct BriefPanelView: View {
             // fallback the sheet is visually quiet (paper-on-paper with a soft edge).
             content
                 .paperSheet()
-                .padding(.horizontal, 12)
+                // A slim Liquid Glass frame around the warm paper card — enough to read as
+                // a glass edge, without a heavy matte border.
+                .padding(.horizontal, 10)
                 .padding(.top, 4)
-                .padding(.bottom, 12)
+                .padding(.bottom, 10)
         }
         .frame(width: panelWidth)
-        .background(panelSurface)
+        // The window's behind-window glass (BriefPanelController's NSGlassEffectView) is
+        // the panel surface — it owns the live Liquid Glass, the rounded corners, and the
+        // native shadow. We only clip our own opaque children (the paper sheet, hero) to
+        // the same radius so they don't square off the masked glass corners; the header
+        // strip and the wide margins around the paper sheet stay transparent and read as
+        // genuine Liquid Glass over the desktop behind the panel.
+        .clipShape(.rect(cornerRadius: 16))
+        // Report the card's height up to the controller so it can re-pin the panel
+        // whenever content changes (async hero image, refresh swap). This is the proven
+        // signal that fires on those events.
+        .background {
+            GeometryReader { proxy in
+                Color.clear
+                    .onChange(of: proxy.size.height, initial: true) { _, height in
+                        onContentHeightChange(height)
+                    }
+            }
+        }
         .tint(accent)
     }
 
@@ -87,7 +134,7 @@ public struct BriefPanelView: View {
             // Leading close control — its own glass element on the leading margin.
             GlassToolbarCluster {
                 Button {
-                    NSApp.keyWindow?.close()
+                    onClose()
                 } label: {
                     headerIcon("xmark", size: 11, weight: .semibold)
                 }
@@ -95,12 +142,10 @@ public struct BriefPanelView: View {
                 .accessibilityLabel("Close")
             }
 
-            Text(headerTitle)
-                .font(DaybriefTheme.serifBody(13))
-                .foregroundStyle(DaybriefTheme.ink)
-                .lineLimit(1)
-                .truncationMode(.tail)
-
+            // No title text here: the edition's masthead ("The Friday Brief") already
+            // sits in the hero image below, so a header title would just duplicate it
+            // (and a clear-glass header can't keep arbitrary text legible over any
+            // backdrop). The header is the close control + the trailing actions only.
             Spacer(minLength: 0)
 
             // Trailing actions grouped in one glass cluster (refresh + settings).
@@ -130,19 +175,27 @@ public struct BriefPanelView: View {
                 .accessibilityLabel("Settings")
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
+        // Align the header controls with the slim glass frame (matching the paper card's
+        // side margins), with a little glass above them so the frame wraps the top too.
+        .padding(.horizontal, 10)
+        .padding(.top, 8)
+        .padding(.bottom, 8)
     }
 
     /// A toolbar icon label sized consistently for the header glass buttons.
     private func headerIcon(_ name: String, size: CGFloat, weight: Font.Weight) -> some View {
         Image(systemName: name)
             .font(.system(size: size, weight: weight))
-            // .primary adapts for contrast on both the glass buttons (macOS 26) and the
-            // plain paper fallback — inkSecondary was invisible on the glass material.
-            .foregroundStyle(.primary)
+            // The header sits on clear glass, so the glyphs track the wallpaper behind it
+            // (white over dark, brand ink over light) rather than just the light/dark mode.
+            .foregroundStyle(headerForeground)
+            .shadow(
+                color: (backdrop.isDarkBackdrop ? Color.black : .white).opacity(0.3),
+                radius: 1.5
+            )
             .frame(width: 22, height: 22)
             .contentShape(Rectangle())
+            .animation(.easeInOut(duration: 0.2), value: backdrop.isDarkBackdrop)
     }
 
     /// The thin title strip, e.g. "The Wednesday Brief · June 17".
@@ -217,9 +270,9 @@ public struct BriefPanelView: View {
                 )
             }
 
-            if vm.isEmpty {
-                quietDay(accent: editionAccent)
-            } else if !vm.sections.allSatisfy({ $0.entries.isEmpty }) {
+            // On a quiet day (no lead, no entries) nothing is rendered here — the lede
+            // under the hero already carries it; no separate "quiet day" card.
+            if !vm.sections.allSatisfy({ $0.entries.isEmpty }) {
                 VStack(alignment: .leading, spacing: 26) {
                     ForEach(vm.sections.filter { !$0.entries.isEmpty }) { section in
                         BriefSectionView(
@@ -262,49 +315,6 @@ public struct BriefPanelView: View {
                 }
         }
         .frame(height: editionHeight == 0 ? min(maxEditionHeight, 500) : min(editionHeight, maxEditionHeight))
-    }
-
-    /// The intentional, calm "quiet day" state: a brief exists but holds no
-    /// action items. Emptiness is a feature — we let the lede carry it and add a
-    /// single reassuring line rather than padding the page.
-    private func quietDay(accent: Color) -> some View {
-        VStack(spacing: 10) {
-            Image(systemName: "leaf")
-                .font(.system(size: 24, weight: .light))
-                .foregroundStyle(accent.opacity(0.8))
-                .accessibilityHidden(true)
-            Text("Nothing demanding your attention. Enjoy the quiet.")
-                .font(DaybriefTheme.serifItalic(13))
-                .foregroundStyle(DaybriefTheme.inkSecondary)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 28)
-        .modifier(EditorialCardModifier())
-    }
-
-    // MARK: - Panel surface (Liquid Glass on macOS 26)
-
-    /// The panel container background: Liquid Glass chrome on macOS 26 (so the
-    /// margins around the paper sheet read as glass), falling back to the warm
-    /// paper page on earlier systems.
-    @ViewBuilder
-    private var panelSurface: some View {
-        if #available(macOS 26.0, *) {
-            // A backing carrying the glass material fills the window; the editorial
-            // content rides an opaque paper sheet on top (see `body`), so only the
-            // chrome / margins read as glass. A faint warm tint makes the margins read
-            // as genuinely tinted Liquid Glass rather than near-clear, and `.interactive`
-            // lets the specular highlight track the pointer for the live-glass feel.
-            Color.clear
-                .glassEffect(
-                    .regular.tint(DaybriefTheme.accent.opacity(0.07)).interactive(),
-                    in: .rect(cornerRadius: 0)
-                )
-        } else {
-            DaybriefTheme.paper
-        }
     }
 
     // MARK: - Derived editorial strings
