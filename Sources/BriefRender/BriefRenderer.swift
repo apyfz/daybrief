@@ -41,9 +41,16 @@ public struct BriefRenderer: Sendable {
     public func viewModel(_ brief: Brief) -> BriefViewModel {
         let now = dateProvider.now()
 
-        let lead = brief.lead.map(entryViewModel)
+        // With no signals read, there's nothing real to brief — any lead/sections the model
+        // produced are filler (e.g. a "clear day ahead" headline dressed up as a Lead). Drop
+        // them so the panel shows the genuine quiet-day state instead of a fabricated lead.
+        let hasSignals = brief.signalsRead > 0
+        let effectiveLead = hasSignals ? brief.lead : nil
+        let effectiveSections = hasSignals ? brief.sections : []
 
-        let sections = brief.sections.map { section in
+        let lead = effectiveLead.map(entryViewModel)
+
+        let sections = effectiveSections.map { section in
             BriefViewModel.Section(
                 id: section.id,
                 title: section.title,
@@ -61,9 +68,10 @@ public struct BriefRenderer: Sendable {
         }
 
         // Surfaced = the lead (if any) + every section entry. Computed here, factually,
-        // never read from the model — it must always match what the edition actually shows.
-        let surfaced = (brief.lead == nil ? 0 : 1)
-            + brief.sections.reduce(0) { $0 + $1.entries.count }
+        // never read from the model — it must always match what the edition actually shows
+        // (so it reflects the signal-gated lead/sections, not the raw model output).
+        let surfaced = (effectiveLead == nil ? 0 : 1)
+            + effectiveSections.reduce(0) { $0 + $1.entries.count }
 
         return BriefViewModel(
             id: brief.id,
@@ -71,7 +79,7 @@ public struct BriefRenderer: Sendable {
             generatedAtAbsolute: BriefPresentation.absoluteTime(brief.generatedAt, calendar: calendar),
             spaceFilterDisplay: BriefPresentation.spaceDisplay(brief.spaceFilter),
             lead: lead,
-            leadCTALabel: brief.lead.flatMap { BriefPresentation.cleaned($0.ctaLabel) },
+            leadCTALabel: effectiveLead.flatMap { BriefPresentation.cleaned($0.ctaLabel) },
             sections: sections,
             connectorErrors: errors,
             colophon: BriefPresentation.colophon(

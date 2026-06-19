@@ -182,7 +182,9 @@ extension PromptTemplate {
     when demands pile up, eventful when one big thing dominates, steady otherwise.
     - Choose the single most important item as the lead story — one well-contextualized \
     entry, rendered large. Do not duplicate it in the sections below; the sections cover \
-    everything else.
+    everything else. Never invent a lead: if there is nothing concrete to act on, set \
+    lead to null and leave sections empty — do not fill the lead with a placeholder like \
+    "a clear day ahead". A quiet day is carried by the lede alone.
     - Group calendar items under one dated section; group what slipped or is unread \
     under another. Do not create a section for a category with nothing in it.
     - Headlines are short and concrete (a verb where natural). Context paragraphs are \

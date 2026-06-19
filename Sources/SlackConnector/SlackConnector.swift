@@ -68,6 +68,11 @@ public struct SlackConnector: Connector {
         "pinned_item", "unpinned_item",
     ]
 
+    /// How far back an unread DM may be and still surface. Keeps the brief about what
+    /// you actually missed *recently* (covers a Fri→Mon weekend) instead of dredging up
+    /// months-old long-ignored unread DMs.
+    private static let maxUnreadAgeDays: Double = 4
+
     private static let logger = Logger(subsystem: "co.daybrief.connector", category: "slack")
 
     private let transport: any HTTPTransport
@@ -104,8 +109,9 @@ public struct SlackConnector: Connector {
             // honestly verified against — this user. If identity can't be resolved we
             // skip the mentions search rather than mislabel everything (DMs still run).
             let identity = try await resolveSelf(token: token)
+            var accountItems: [RawItem] = []
             if let identity {
-                items += try await fetchMentions(
+                accountItems += try await fetchMentions(
                     token: token,
                     account: account,
                     since: request.since,
@@ -116,7 +122,15 @@ public struct SlackConnector: Connector {
                     "auth.test did not return a user_id; skipping the Slack mentions search and returning DMs only."
                 )
             }
-            items += try await fetchDMs(token: token, account: account)
+            // Only surface unread DMs from the last few days (covers a weekend) so old,
+            // long-ignored unread doesn't clutter the brief.
+            let unreadCutoff = request.since.addingTimeInterval(-Self.maxUnreadAgeDays * 24 * 60 * 60)
+            accountItems += try await fetchDMs(
+                token: token, account: account, identity: identity, unreadCutoff: unreadCutoff
+            )
+            // Resolve sender user ids → display names so the brief shows names, not `U…` ids.
+            accountItems = try await resolveSenderNames(in: accountItems, token: token)
+            items += accountItems
         }
         return items
     }
@@ -180,6 +194,8 @@ public struct SlackConnector: Connector {
         guard let matches = json["messages"]?["matches"]?.array else { return [] }
         return matches.compactMap { match in
             guard let ts = match["ts"]?.string else { return nil }
+            // Don't surface the user's own messages — you don't need to act on what you wrote.
+            if match["user"]?.string == identity.userID { return nil }
             // Only label a match as a mention if its text actually names the user;
             // fuzzy search hits that merely contain the handle as a word are dropped.
             guard let text = match["text"]?.string,
@@ -210,7 +226,9 @@ public struct SlackConnector: Connector {
     /// went unread for days still surfaces; a fully-read channel is skipped with no
     /// history call. (`unread_count_display` requires the `im:read`/`mpim:read`
     /// scopes the connector already documents.)
-    private func fetchDMs(token: String, account: Account) async throws -> [RawItem] {
+    private func fetchDMs(
+        token: String, account: Account, identity: SelfIdentity?, unreadCutoff: Date
+    ) async throws -> [RawItem] {
         var listComponents = Self.apiComponents(method: "conversations.list")
         listComponents.queryItems = [
             URLQueryItem(name: "types", value: "im,mpim"),
@@ -256,6 +274,11 @@ public struct SlackConnector: Connector {
                 // subtypes — bot/app DMs, file shares, /me — are kept, so unread bot/file
                 // DMs surface instead of silently vanishing.
                 if let subtype = message["subtype"]?.string, Self.noiseSubtypes.contains(subtype) { continue }
+                // Skip the user's own messages — you don't need to act on what you sent.
+                if let identity, message["user"]?.string == identity.userID { continue }
+                // Skip unread that's older than the recency window (covers a weekend) so
+                // long-ignored stale DMs don't clutter the brief.
+                if let date = Self.date(fromSlackTS: ts), date < unreadCutoff { continue }
                 let envelope = SlackRawEnvelope(
                     origin: isGroup ? .groupDM : .directMessage,
                     channelName: channel["name"]?.string ?? channelID,
@@ -270,6 +293,63 @@ public struct SlackConnector: Connector {
             }
         }
         return items
+    }
+
+    // MARK: - Name resolution
+
+    /// Enriches each item's envelope with the sender's resolved display name, so the brief
+    /// shows "from Dana" rather than the raw "U0A8…" id. Resolves each distinct sender id
+    /// once via `users.info` (cached); items that already carry a `username` (search hits)
+    /// or can't be resolved are left for `normalize` to handle. Best-effort — a failed
+    /// lookup just leaves that sender unresolved.
+    private func resolveSenderNames(in items: [RawItem], token: String) async throws -> [RawItem] {
+        // Distinct user ids that still need resolving (skip ones that already have a username).
+        let ids = Set(items.compactMap { item -> String? in
+            guard let envelope = SlackRawEnvelope(json: item.json),
+                  envelope.message["username"]?.string == nil
+            else { return nil }
+            return envelope.message["user"]?.string
+        })
+        guard !ids.isEmpty else { return items }
+
+        var names: [String: String] = [:]
+        for id in ids {
+            try Task.checkCancellation()
+            if let name = try? await resolveUserName(id, token: token) { names[id] = name }
+        }
+        guard !names.isEmpty else { return items }
+
+        return items.map { item in
+            guard let envelope = SlackRawEnvelope(json: item.json),
+                  envelope.senderName == nil,
+                  let uid = envelope.message["user"]?.string,
+                  let name = names[uid]
+            else { return item }
+            let enriched = SlackRawEnvelope(
+                origin: envelope.origin,
+                channelName: envelope.channelName,
+                message: envelope.message,
+                senderName: name
+            )
+            return RawItem(id: item.id, connectorId: Self.id, accountLabel: item.accountLabel, json: enriched.json)
+        }
+    }
+
+    /// Resolves one user id to a human display name via `users.info` (needs `users:read`).
+    /// Prefers the display name, then the real name, then the handle.
+    private func resolveUserName(_ userID: String, token: String) async throws -> String? {
+        var components = Self.apiComponents(method: "users.info")
+        components.queryItems = [URLQueryItem(name: "user", value: userID)]
+        let json = try await get(components, token: token, method: "users.info")
+        let user = json["user"]
+        let profile = user?["profile"]
+        let candidates = [
+            profile?["display_name"]?.string,
+            profile?["real_name"]?.string,
+            user?["real_name"]?.string,
+            user?["name"]?.string,
+        ]
+        return candidates.compactMap { $0 }.first { !$0.isEmpty }
     }
 
     /// Issues a GET with `Authorization: Bearer <token>` and verifies the Slack envelope.
@@ -316,9 +396,10 @@ public struct SlackConnector: Connector {
                 return nil
             }
             let text = message["text"]?.string ?? ""
-            // v0: user ids aren't resolved to names — prefer the search `username`,
-            // else fall back to the raw user id. // TODO users.info to resolve names.
-            let sender = message["username"]?.string ?? message["user"]?.string ?? "unknown"
+            // Prefer the resolved display name (fetch resolves ids via users.info), then a
+            // search hit's `username`. Never show the raw `U…` id — fall back to a neutral
+            // label so the brief reads naturally ("a teammate") instead of a code.
+            let sender = envelope.senderName ?? message["username"]?.string ?? "a teammate"
 
             let location: String
             switch envelope.origin {

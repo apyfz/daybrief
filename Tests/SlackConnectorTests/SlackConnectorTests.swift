@@ -64,7 +64,9 @@ private func dayWindow() -> (since: Date, until: Date) {
     #expect(item.type == .message)
     #expect(item.urgencyHints == [.unread])
     #expect(item.body == "Hey, are we still on for the 2pm sync?")
-    #expect(item.people == ["U04SAM"]) // unresolved user id (v0: no users.info)
+    // No resolved name on this raw envelope and no search `username`, so normalize uses a
+    // neutral label rather than leaking the raw `U…` id. (fetch() resolves real names.)
+    #expect(item.people == ["a teammate"])
     #expect(item.title.contains("Direct message"))
     #expect(item.url == nil) // history messages carry no permalink
 }
@@ -112,21 +114,25 @@ private func dayWindow() -> (since: Date, until: Date) {
     try await transport.enqueue(data: loader.data("conversations-history"))
     try await transport.enqueue(data: loader.data("conversations-info"))
     try await transport.enqueue(data: loader.data("conversations-history"))
+    // Sender-name resolution: the surfaced DM sender (U04SAM, no `username`) is resolved
+    // once via users.info. (The authed user's own message is dropped, so only U04SAM.)
+    try await transport.enqueue(data: loader.data("users-info"))
 
     let window = dayWindow()
     let raw = try await makeConnector(transport: transport)
         .fetch(FetchRequest(accounts: [makeAccount()], since: window.since, until: window.until))
 
-    // 2 mentions (both fixture matches name <@U01ALIM>) + (2 channels × 2 real messages;
-    // the channel_join subtype is skipped) = 6.
+    // 2 mentions (both fixture matches name <@U01ALIM>) + DMs: each channel's only non-own,
+    // recent, non-system message (the authed user's own message + the channel_join are
+    // dropped) → 1 per channel × 2 channels = 2.
     let mentions = raw.filter { $0.id.hasPrefix("mention:") }
     let dms = raw.filter { $0.id.hasPrefix("dm:") }
     #expect(mentions.count == 2)
-    #expect(dms.count == 4)
+    #expect(dms.count == 2)
 
     let requests = await transport.recordedRequests
-    // auth.test, search.messages, conversations.list, then (info + history) × 2 channels.
-    #expect(requests.count == 7)
+    // auth.test, search.messages, conversations.list, (info + history) × 2 channels, users.info.
+    #expect(requests.count == 8)
 
     // First request resolves the authed user via auth.test (with a Bearer token).
     let authURL = try #require(requests.first?.url?.absoluteString)
@@ -171,6 +177,10 @@ private func dayWindow() -> (since: Date, until: Date) {
     try await transport.enqueue(data: loader.data("conversations-info-read")) // D03DIRECT: 0 unread → skip
     try await transport.enqueue(data: loader.data("conversations-info")) // G05GROUP: 3 unread → read
     try await transport.enqueue(data: loader.data("conversations-history"))
+    // No identity (auth-test-no-user) → own-message filter can't apply, so both senders
+    // (U04SAM, U01ALIM) surface and each is resolved once via users.info.
+    try await transport.enqueue(data: loader.data("users-info"))
+    try await transport.enqueue(data: loader.data("users-info"))
 
     let window = dayWindow()
     let raw = try await makeConnector(transport: transport)
@@ -182,8 +192,8 @@ private func dayWindow() -> (since: Date, until: Date) {
     #expect(dms.allSatisfy { $0.id.hasPrefix("dm:G05GROUP:") })
 
     let requests = await transport.recordedRequests
-    // auth.test, conversations.list, info(read)→skip, info(unread)→history = 5 requests.
-    #expect(requests.count == 5)
+    // auth.test, list, info(read)→skip, info(unread)→history, then users.info × 2 senders = 7.
+    #expect(requests.count == 7)
     let urls = requests.compactMap { $0.url?.absoluteString }
     // Exactly one history call was made — the read channel never triggered one.
     #expect(urls.filter { $0.contains("conversations.history") }.count == 1)
@@ -254,6 +264,9 @@ private func dayWindow() -> (since: Date, until: Date) {
     try await transport.enqueue(data: loader.data("conversations-history"))
     try await transport.enqueue(data: loader.data("conversations-info"))
     try await transport.enqueue(data: loader.data("conversations-history"))
+    // No identity → own-message filter can't apply; both distinct senders resolved via users.info.
+    try await transport.enqueue(data: loader.data("users-info"))
+    try await transport.enqueue(data: loader.data("users-info"))
 
     let window = dayWindow()
     let raw = try await makeConnector(transport: transport)
@@ -262,10 +275,10 @@ private func dayWindow() -> (since: Date, until: Date) {
     #expect(raw.filter { $0.id.hasPrefix("mention:") }.isEmpty)
     #expect(raw.filter { $0.id.hasPrefix("dm:") }.count == 4)
 
-    // No search.messages request was issued: auth.test, then list, then per channel an
-    // info + history call (two channels in the list fixture).
+    // No search.messages request: auth.test, list, (info + history) × 2 channels, then
+    // users.info × 2 senders = 8.
     let requests = await transport.recordedRequests
-    #expect(requests.count == 6)
+    #expect(requests.count == 8)
     #expect(try #require(requests.first?.url?.absoluteString).contains("auth.test"))
     #expect(requests.allSatisfy { !($0.url?.absoluteString.contains("search.messages") ?? false) })
 }

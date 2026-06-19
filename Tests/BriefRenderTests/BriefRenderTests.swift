@@ -246,7 +246,10 @@ struct BriefRenderTests {
                         priority: 1
                     ),
                 ]),
-            ]
+            ],
+            // Non-zero so the renderer keeps the content (the signal-gated quiet-day guard
+            // only strips lead/sections when nothing was read).
+            signalsRead: 1
         )
         let html = makeRenderer().renderHTML(brief)
 

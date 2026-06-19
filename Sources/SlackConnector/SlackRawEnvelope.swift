@@ -26,6 +26,9 @@ struct SlackRawEnvelope {
     let channelName: String?
     /// The verbatim Slack message object.
     let message: JSONValue
+    /// The sender's resolved display name, when `fetch` could resolve the raw user id via
+    /// `users.info`. `normalize` prefers this so the brief shows a name, not a `U…` id.
+    let senderName: String?
 
     /// The envelope encoded as a ``JSONValue`` for ``RawItem/json``.
     var json: JSONValue {
@@ -35,6 +38,9 @@ struct SlackRawEnvelope {
         ]
         if let channelName {
             object["_channelName"] = .string(channelName)
+        }
+        if let senderName {
+            object["_senderName"] = .string(senderName)
         }
         return .object(object)
     }
@@ -48,12 +54,14 @@ struct SlackRawEnvelope {
         self.origin = origin
         channelName = json["_channelName"]?.string
         self.message = message
+        senderName = json["_senderName"]?.string
     }
 
     /// Creates an envelope to stash during fetch.
-    init(origin: Origin, channelName: String?, message: JSONValue) {
+    init(origin: Origin, channelName: String?, message: JSONValue, senderName: String? = nil) {
         self.origin = origin
         self.channelName = channelName
         self.message = message
+        self.senderName = senderName
     }
 }
