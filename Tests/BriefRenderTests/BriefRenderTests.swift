@@ -166,6 +166,42 @@ struct BriefRenderTests {
         #expect(!headlines.contains("Sign off the Q3 launch plan"))
     }
 
+    @Test("a clear-day lead with no link or CTA is dropped (quiet-day filler, not a Lead)")
+    func clearDayFillerLeadDropped() {
+        let brief = Brief(
+            generatedAt: Self.generatedAt,
+            lead: BriefEntry(headline: "Nothing pressing today — a quiet Friday", detail: nil, url: nil, priority: nil),
+            mood: .clear,
+            signalsRead: 2,
+            sources: [.gmail]
+        )
+        #expect(makeRenderer().viewModel(brief).lead == nil)
+    }
+
+    @Test("a clear-day lead that is actionable (has a CTA) is kept")
+    func clearDayActionableLeadKept() {
+        let brief = Brief(
+            generatedAt: Self.generatedAt,
+            lead: BriefEntry(headline: "Send the signed contract", detail: nil, url: nil, priority: 0, ctaLabel: "Send it"),
+            mood: .clear,
+            signalsRead: 2,
+            sources: [.gmail]
+        )
+        #expect(makeRenderer().viewModel(brief).lead?.headline == "Send the signed contract")
+    }
+
+    @Test("a no-CTA lead on a busier day is kept (only clear-day filler is dropped)")
+    func nonClearDayLeadKept() {
+        let brief = Brief(
+            generatedAt: Self.generatedAt,
+            lead: BriefEntry(headline: "Prep the board deck", detail: nil, url: nil, priority: 0),
+            mood: .steady,
+            signalsRead: 5,
+            sources: [.gmail]
+        )
+        #expect(makeRenderer().viewModel(brief).lead?.headline == "Prep the board deck")
+    }
+
     @Test("viewModel builds a factual colophon: filing time, counts, source names")
     func viewModelColophon() {
         let vm = makeRenderer().viewModel(sampleBrief())

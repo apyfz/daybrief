@@ -45,7 +45,15 @@ public struct BriefRenderer: Sendable {
         // produced are filler (e.g. a "clear day ahead" headline dressed up as a Lead). Drop
         // them so the panel shows the genuine quiet-day state instead of a fabricated lead.
         let hasSignals = brief.signalsRead > 0
-        let effectiveLead = hasSignals ? brief.lead : nil
+
+        // A Lead is "the single most important thing to act on". On a model-declared
+        // "clear" (quiet/light) day, a lead with no link and no call-to-action is a
+        // quiet-day statement ("Nothing pressing today") the model dressed up as a Lead —
+        // that belongs in the lede, not the Lead slot. Drop it (the lede carries the day);
+        // an actionable lead, or any lead on a busier day, is kept.
+        let leadIsClearDayFiller = brief.mood == .clear
+            && brief.lead.map { $0.url == nil && BriefPresentation.cleaned($0.ctaLabel) == nil } == true
+        let effectiveLead = (hasSignals && !leadIsClearDayFiller) ? brief.lead : nil
         let effectiveSections = hasSignals ? brief.sections : []
 
         let lead = effectiveLead.map(entryViewModel)

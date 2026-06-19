@@ -184,7 +184,9 @@ extension PromptTemplate {
     entry, rendered large. Do not duplicate it in the sections below; the sections cover \
     everything else. Never invent a lead: if there is nothing concrete to act on, set \
     lead to null and leave sections empty — do not fill the lead with a placeholder like \
-    "a clear day ahead". A quiet day is carried by the lede alone.
+    "a clear day ahead". A quiet day is carried by the lede alone. When the mood is \
+    "clear", the lead MUST be null: a "nothing pressing today" / "a quiet day" observation \
+    belongs in the lede, never dressed up as the lead.
     - Group calendar items under one dated section; group what slipped or is unread \
     under another. Do not create a section for a category with nothing in it.
     - Headlines are short and concrete (a verb where natural). Context paragraphs are \

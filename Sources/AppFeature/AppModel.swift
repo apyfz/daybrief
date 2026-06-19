@@ -133,8 +133,10 @@ public final class AppModel {
             }
         } catch {
             // Surface the precise, actionable reason (data-policy, credits, bad key, …)
-            // instead of swallowing every failure into a generic "check your key".
-            lastError = (error as? LLMError)?.displayReason ?? "Could not load models — check your key and try again."
+            // instead of swallowing every failure into a generic, often-wrong "check your
+            // key". For non-LLM errors (keychain, network) show the real cause rather than
+            // blaming the key.
+            lastError = (error as? LLMError)?.displayReason ?? "Could not load models: \(error.localizedDescription)"
             Self.logger.error("availableModels failed: \(error.localizedDescription, privacy: .public)")
             return []
         }
