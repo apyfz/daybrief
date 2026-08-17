@@ -305,6 +305,10 @@ private func dayWindow() -> (since: Date, until: Date) {
     #expect(channelItems.count == 4)
     let urls = await transport.recordedRequests.compactMap { $0.url?.absoluteString }
     #expect(!urls.contains { $0.contains("channel=C03LURK") })
+    // Channel history is capped tightly: a covered channel is a busy one, and a brief
+    // wants a few recent lines from it rather than the backlog.
+    let channelHistory = try #require(urls.first { $0.contains("conversations.history") })
+    #expect(channelHistory.contains("limit=8"))
 
     // Channel traffic is ambient, so it lands in the brief's "group" half.
     let items = connector.normalize(channelItems)

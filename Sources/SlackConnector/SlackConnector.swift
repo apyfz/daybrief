@@ -66,9 +66,15 @@ public struct SlackConnector: Connector {
     /// blow the page budget (Tier-3 honors up to 1000).
     private static let historyLimit = 200
     /// Upper bound on messages pulled per channel. Far tighter than ``historyLimit``
-    /// because channel unread is ambient: a 200-message backlog should contribute a few
-    /// recent lines to the brief, not two hundred.
-    private static let channelHistoryLimit = 20
+    /// because channel unread is ambient: a busy channel should contribute a few recent
+    /// lines to the brief, not its whole backlog.
+    ///
+    /// Deliberately small. Readers pick the channels they actually follow, which are by
+    /// definition the busy ones — on this account every covered channel sits at the cap
+    /// every day. A larger number doesn't add signal, it just hands the model more to
+    /// average away, and a single important message is likelier to survive a digest of
+    /// eight than of twenty.
+    private static let channelHistoryLimit = 8
 
     /// Message subtypes that are pure channel/system events (joins, renames, pins, …) and
     /// carry nothing worth briefing. Everything else — including **bot/app messages, file
@@ -361,6 +367,14 @@ public struct SlackConnector: Connector {
         public let name: String
         /// Whether it's a private channel (shown with a different glyph).
         public let isPrivate: Bool
+
+        /// Creates a member channel. Public so previews and offscreen snapshots can
+        /// build a representative list without a network call.
+        public init(id: String, name: String, isPrivate: Bool) {
+            self.id = id
+            self.name = name
+            self.isPrivate = isPrivate
+        }
     }
 
     /// The channels `account` belongs to, sorted by name — the list Settings renders so
