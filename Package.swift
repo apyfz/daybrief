@@ -69,6 +69,14 @@ let package = Package(
                 // folder may hold only Geist in CI — `DaybriefTheme.registerBundledFonts()`
                 // and the type APIs fall back to the system serif gracefully.
                 .copy("Fonts"),
+                // The connector glyphs (Hugeicons, free MIT set) as vector PDFs — see
+                // `DaybriefIcon`. Only the handful actually used is vendored.
+                //
+                // Copied as a plain folder, deliberately not an `.xcassets`: SwiftPM
+                // ships an asset catalog verbatim without running `actool`, so an
+                // asset-catalog lookup finds nothing in the `swift build` products the
+                // snapshot tools use — it would only work in the Xcode build.
+                .copy("Icons"),
             ]
         ),
 
