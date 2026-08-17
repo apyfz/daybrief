@@ -62,6 +62,7 @@ public struct BriefRenderer: Sendable {
             BriefViewModel.Section(
                 id: section.id,
                 title: section.title,
+                source: section.source,
                 entries: BriefPresentation.orderedEntries(section.entries).map(entryViewModel)
             )
         }
@@ -86,6 +87,8 @@ public struct BriefRenderer: Sendable {
             generatedAtRelative: "Generated \(BriefPresentation.relativeTime(of: brief.generatedAt, now: now))",
             generatedAtAbsolute: BriefPresentation.absoluteTime(brief.generatedAt, calendar: calendar),
             spaceFilterDisplay: BriefPresentation.spaceDisplay(brief.spaceFilter),
+            // The "Daybrief" overview card; fall back to the lede on older briefs.
+            summary: brief.summary.isEmpty ? brief.lede : brief.summary,
             lead: lead,
             leadCTALabel: effectiveLead.flatMap { BriefPresentation.cleaned($0.ctaLabel) },
             sections: sections,

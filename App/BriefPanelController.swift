@@ -77,6 +77,12 @@ final class BriefPanelController: NSObject, NSWindowDelegate {
         // Key (not active): the card's buttons/scrolling work on the first click and
         // Esc reaches us, but the app stays an accessory and doesn't steal activation.
         panel.makeKeyAndOrderFront(nil)
+        // Catch the height SwiftUI settles on after this first layout pass. `layoutAndPin`
+        // is idempotent (it derives the frame from screen geometry and no-ops when the
+        // frame already matches), so this is a safety net for the first open rather than
+        // a second source of truth — without it the panel can stay at its placeholder
+        // height if the measurement lands between ordering front and the first re-pin.
+        DispatchQueue.main.async { [weak self] in self?.layoutAndPin() }
         installDismissMonitors()
         statusItem?.button?.highlight(true)
     }
@@ -155,10 +161,21 @@ final class BriefPanelController: NSObject, NSWindowDelegate {
 
     /// SwiftUI reported a new card height (hero image load, refresh swap). Re-pin so
     /// the top edge stays `gap` below the menu bar and the panel grows downward.
+    ///
+    /// Re-pins whenever a panel exists, not only while it's visible. On the very first
+    /// open the card's real height lands *around* the moment the window is ordered
+    /// front — the edition measures its content, then re-measures once the ScrollView
+    /// gets its final frame. Ignoring a height that arrived a beat too early left the
+    /// window stuck at its 500pt placeholder with the masthead clipped, which then
+    /// looked "fixed" on the next click only because the height was already known.
     private func cardHeightChanged(_ height: CGFloat) {
         guard height > 0, height != measuredCardHeight else { return }
         measuredCardHeight = height
-        if panel?.isVisible == true { layoutAndPin() }
+        guard let panel else { return }
+        // A height change while visible is a dropdown expand/collapse or refresh swap —
+        // animate the resize so the panel grows/shrinks smoothly instead of snapping.
+        // Before it's on screen there's nothing to animate, so snap into place.
+        layoutAndPin(animated: panel.isVisible)
     }
 
     // MARK: - Positioning
@@ -168,7 +185,7 @@ final class BriefPanelController: NSObject, NSWindowDelegate {
     /// the card (the native shadow lives outside the frame), so there is no inset
     /// math. Idempotent: derived from fixed screen geometry every call, the
     /// `frame == newFrame` guard prevents thrash, and nothing else sets the frame.
-    private func layoutAndPin() {
+    private func layoutAndPin(animated: Bool = false) {
         guard
             let panel,
             let screen = statusItem?.button?.window?.screen ?? NSScreen.main
@@ -176,19 +193,30 @@ final class BriefPanelController: NSObject, NSWindowDelegate {
 
         let vis = screen.visibleFrame
         let windowWidth = cardWidth
-        let windowHeight = measuredCardHeight > 0 ? measuredCardHeight : 500
+        // Cap the window so it always fits between the menu-bar gap and the screen
+        // bottom: the top stays pinned `gap` below the menu bar and the content scrolls
+        // internally when it's taller — the top never clamps up and clips the masthead.
+        let maxHeight = vis.height - (gap * 2)
+        let windowHeight = min(measuredCardHeight > 0 ? measuredCardHeight : 500, maxHeight)
 
         // `vis.maxY` is just below the menu bar (notch-safe — visibleFrame already
         // excludes the menu-bar band). Card top sits `gap` below it; the window == card.
-        var originY = (vis.maxY - gap) - windowHeight
-        originY = max(originY, vis.minY) // keep the card bottom on-screen
+        let originY = (vis.maxY - gap) - windowHeight
 
         // Pin the card's right edge `rightMargin` from the screen's right edge.
         let originX = (vis.maxX - rightMargin) - windowWidth
 
         let newFrame = NSRect(x: originX, y: originY, width: windowWidth, height: windowHeight)
         guard panel.frame != newFrame else { return }
-        panel.setFrame(newFrame, display: true)
+        if animated {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.2
+                context.allowsImplicitAnimation = true
+                panel.animator().setFrame(newFrame, display: true)
+            }
+        } else {
+            panel.setFrame(newFrame, display: true)
+        }
         // Recompute the native shadow against the new bounds so it doesn't lag the resize.
         panel.invalidateShadow()
     }

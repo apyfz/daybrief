@@ -27,24 +27,36 @@ func makeSampleBrief() -> Brief {
     components.minute = 32
     let generatedAt = Calendar(identifier: .gregorian).date(from: components) ?? Date()
 
-    let pushSection = BriefSection(
-        title: "Push your work forward",
+    let gmailSection = BriefSection(
+        title: "Gmail",
+        source: .gmail,
         entries: [
             BriefEntry(
-                headline: "Reply to Maya on the Q3 roadmap before standup",
-                detail: """
-                She blocked her Thursday review on your take on the pricing tiers. \
-                Two of the three open questions are answered in last night's thread — \
-                the third (enterprise discounting) is the only real decision left.
-                """,
+                headline: "Maya needs your call on enterprise discounting",
+                detail: "She blocked Thursday's review on the pricing tiers; last night's thread narrowed it to two options.",
                 url: URL(string: "https://mail.google.com/mail/u/0/#inbox/q3-roadmap"),
                 priority: 0,
-                ctaLabel: "Let's do it",
+                ctaLabel: "Reply",
                 sourceItemIDs: [UUID()]
             ),
             BriefEntry(
-                headline: "Confirm the 2:00 PM design review",
-                detail: "Three calendar holds still conflict; the room is double-booked with Growth.",
+                headline: "Finance approved the contractor budget overnight",
+                detail: "No action needed — onboarding can start whenever you're ready.",
+                url: URL(string: "https://mail.google.com/mail/u/0/#inbox/finance"),
+                priority: 2,
+                ctaLabel: nil,
+                sourceItemIDs: [UUID()]
+            ),
+        ]
+    )
+
+    let calendarSection = BriefSection(
+        title: "Calendar",
+        source: .gcal,
+        entries: [
+            BriefEntry(
+                headline: "2:00 PM design review — room double-booked",
+                detail: "Three holds still conflict; the room clashes with Growth.",
                 url: URL(string: "https://calendar.google.com/calendar/u/0/r/day/2026/6/17"),
                 priority: 1,
                 ctaLabel: "Sort it out",
@@ -53,15 +65,39 @@ func makeSampleBrief() -> Brief {
         ]
     )
 
-    let watchSection = BriefSection(
-        title: "Worth a glance",
+    let slackSection = BriefSection(
+        title: "Slack",
+        source: .slack,
         entries: [
             BriefEntry(
-                headline: "Finance approved the contractor budget overnight",
-                detail: "No action needed — onboarding can start whenever you're ready.",
-                url: URL(string: "https://app.slack.com/client/T0/C0/finance"),
-                priority: 2,
-                ctaLabel: nil,
+                headline: "Unread — 23 messages across 6 channels",
+                detail: "Mostly #design ship-review chatter and two #eng threads about the deploy freeze; nothing needs you directly.",
+                url: URL(string: "https://app.slack.com/client/T0"),
+                priority: 0,
+                ctaLabel: "Open Slack",
+                sourceItemIDs: [UUID()]
+            ),
+            BriefEntry(
+                headline: "Direct & mentions — Priya and 2 DMs",
+                detail: "Priya @-mentioned you on the launch checklist; Sam and Dana sent DMs about Friday.",
+                url: URL(string: "https://app.slack.com/client/T0/dms"),
+                priority: 1,
+                ctaLabel: "Reply",
+                sourceItemIDs: [UUID()]
+            ),
+        ]
+    )
+
+    let notionSection = BriefSection(
+        title: "Notion",
+        source: .notion,
+        entries: [
+            BriefEntry(
+                headline: "Draft Q3 OKRs — due today",
+                detail: "Overdue by a day on the Planning board; everything else is on track.",
+                url: URL(string: "https://www.notion.so/okrs"),
+                priority: 0,
+                ctaLabel: "Open task",
                 sourceItemIDs: [UUID()]
             ),
         ]
@@ -79,42 +115,24 @@ func makeSampleBrief() -> Brief {
         accentHex: "#5E7287" // muted winter slate-blue
     )
 
-    // The single most important item, rendered large as the lead story (kept out of
-    // `sections` so it is not duplicated).
-    let lead = BriefEntry(
-        headline: "Decide the enterprise discounting tier before Maya's review",
-        detail: """
-        It's the one open question blocking her Thursday sign-off, and the last two \
-        threads have already narrowed it to two options — this is a call only you can make.
-        """,
-        url: URL(string: "https://mail.google.com/mail/u/0/#inbox/q3-pricing"),
-        priority: 0,
-        ctaLabel: "Make the call",
-        sourceItemIDs: [UUID()]
-    )
-
-    let notices = [
-        ConnectorErrorSummary(
-            connectorId: .slack,
-            kind: .timeout,
-            message: "Slack timed out after 8s."
-        ),
-    ]
+    let notices: [ConnectorErrorSummary] = []
 
     return Brief(
         generatedAt: generatedAt,
         spaceFilter: nil,
         masthead: "The Wednesday Brief",
-        lede: """
-        A quiet morning with one decision that actually matters. Clear the roadmap \
-        reply early and the rest of the day opens up.
+        lede: "A steady Wednesday.",
+        summary: """
+        One real decision today: Maya needs your call on enterprise discounting before \
+        Thursday's review. The 2 PM design review has a room clash to sort, Slack is busy \
+        but nothing's urgent, and your Q3 OKRs draft is a day overdue. Otherwise a calm day.
         """,
-        lead: lead,
+        lead: nil,
         mood: .steady,
         hero: hero,
-        sections: [pushSection, watchSection],
-        signalsRead: 18,
-        sources: [.gmail, .gcal, .slack],
+        sections: [gmailSection, calendarSection, slackSection, notionSection],
+        signalsRead: 31,
+        sources: [.gmail, .gcal, .slack, .notion],
         connectorErrors: notices
     )
 }

@@ -138,7 +138,8 @@ public struct Synthesizer: Sendable {
             spaceFilter: spaceFilter,
             connectorErrors: connectorErrors,
             signalsRead: resolvedSignalsRead,
-            sources: resolvedSources
+            sources: resolvedSources,
+            items: items
         )
     }
 
@@ -166,6 +167,34 @@ public struct Synthesizer: Sendable {
         Today is \(weekday). Use the masthead "The \(weekday) Brief".
 
         \(template.renderNotes)
+
+        STRUCTURE (required — this overrides any conflicting layout note above):
+        - Write `summary`: the "Daybrief" overview, 2-4 calm sentences capturing the \
+        whole day across ALL sources together (what matters, what's quiet). This is the \
+        headline the reader sees first.
+        - Then GROUP the items BY SOURCE into `sections`: exactly one section per source \
+        that has items. Set each section's `source` to the connector id (gmail, gcal, \
+        slack, notion) and `title` to its name (Gmail, Calendar, Slack, Notion). Never \
+        mix sources in a section, and never create a section for a source with no items.
+        - Within a section, write one entry per item (headline + a sentence of context), \
+        ordered most-important first.
+        - Every entry MUST list, in `sourceItemIDs`, the exact `id` of each item it was \
+        written from. An item belongs to exactly one section — the one for its own \
+        source — so never write the same item into two different sections.
+        - SLACK is special: split it into TWO sections, both with source "slack". \
+        Every Slack item carries an audience in its urgency hints — put the "for-you" \
+        items (1:1 DMs and @-mentions, which usually owe a reply) in a section titled \
+        "Slack — For you" with audience "for-you", and the "group" items (group DMs and \
+        channel messages, which are ambient) in a section titled "Slack — Group" with \
+        audience "group". \
+        Never move an item between the two, and omit either section entirely when it \
+        has no items. Summarize group traffic; do not list every message.
+        - Set `audience` to "" for every non-Slack section.
+        - Give an entry a `ctaLabel` ONLY when the reader has something to actually do \
+        (reply, pay, review, decide). Anything you'd describe as routine, automated, \
+        already handled, or "no action needed" MUST have `ctaLabel: null` — a button on \
+        an FYI is noise that contradicts what the entry just said.
+        - Keep `lede` to a single short kicker line.
 
         Here are the normalized items gathered from the reader's connected tools. \
         Each item lists its id, source, type, the people involved, its timestamp, \
@@ -238,7 +267,8 @@ public struct Synthesizer: Sendable {
         spaceFilter: String?,
         connectorErrors: [ConnectorErrorSummary],
         signalsRead: Int,
-        sources: [ConnectorID]
+        sources: [ConnectorID],
+        items: [BriefItem] = []
     ) -> Brief {
         // Trust the model's masthead when it followed the "The <Weekday> Brief"
         // instruction; otherwise fall back to the deterministic, correct form.
@@ -251,17 +281,18 @@ public struct Synthesizer: Sendable {
         let mood = BriefMood(rawValue: synthesized.mood.trimmingCharacters(in: .whitespacesAndNewlines))
             ?? .default
 
-        let lead = synthesized.lead.map(Self.mapEntry)
-        let sections = synthesized.sections.map { section in
-            BriefSection(title: section.title, entries: section.entries.map(Self.mapEntry))
-        }
+        // Source-grouped: each section carries its connector so the UI can render a
+        // per-source dropdown. An unknown/blank source maps to nil (rendered without an
+        // icon). The lead story is retired in favor of the Daybrief summary card.
+        let sections = Self.placedSections(of: synthesized, items: items)
 
         return Brief(
             generatedAt: generatedAt,
             spaceFilter: spaceFilter,
             masthead: masthead,
             lede: synthesized.lede,
-            lead: lead,
+            summary: synthesized.summary,
+            lead: nil,
             mood: mood,
             // Tone-matched hero: pick by mood, deterministic by date, falling back to
             // the plain date pick when the mood has no matching painting.
@@ -273,6 +304,70 @@ public struct Synthesizer: Sendable {
         )
     }
 
+    /// Maps the model's sections into ``BriefSection``s, correcting where it filed each
+    /// entry.
+    ///
+    /// The model groups by source in prose, and it *will* occasionally misfile — a Slack
+    /// mention written into the Gmail section, sometimes duplicating an entry that is
+    /// also filed correctly. Every entry cites the item ids it came from, so placement is
+    /// checkable rather than a matter of trust: an entry is kept only in the section
+    /// matching its items' own source (and, for Slack, their audience). A misfiled entry
+    /// moves to the section it belongs in, or is dropped when no such section exists.
+    ///
+    /// Entries citing no resolvable item are left where the model put them — unverifiable
+    /// is not the same as wrong, and dropping them would lose real content on a model that
+    /// simply omitted the ids.
+    static func placedSections(of synthesized: SynthesizedBrief, items: [BriefItem]) -> [BriefSection] {
+        let itemsByID = Dictionary(items.map { ($0.id.uuidString.lowercased(), $0) }, uniquingKeysWith: { first, _ in first })
+
+        /// The (source, audience) bucket an entry's cited items agree on, or `nil` when
+        /// nothing resolves.
+        func bucket(of entry: SynthesizedBrief.Entry) -> Bucket? {
+            let cited = entry.sourceItemIDs.compactMap { itemsByID[$0.trimmingCharacters(in: .whitespaces).lowercased()] }
+            guard let first = cited.first else { return nil }
+            return Bucket(source: first.source, audience: Self.audience(of: first))
+        }
+
+        // The bucket each of the model's sections declares it holds.
+        let declared = synthesized.sections.map { section -> Bucket? in
+            let raw = section.source.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !raw.isEmpty else { return nil }
+            let source = ConnectorID(raw)
+            let audience = section.audience.trimmingCharacters(in: .whitespacesAndNewlines)
+            return Bucket(source: source, audience: source == .slack ? audience : "")
+        }
+
+        return synthesized.sections.enumerated().compactMap { index, section -> BriefSection? in
+            let sectionBucket = declared[index]
+            let entries = section.entries.filter { entry in
+                guard let entryBucket = bucket(of: entry) else { return true } // unverifiable → leave be
+                if entryBucket == sectionBucket { return true }
+                // Misfiled: keep it here only when it has nowhere better to go, so the
+                // content survives even if the grouping was wrong.
+                return !declared.contains(entryBucket)
+            }
+            guard !entries.isEmpty else { return nil }
+            return BriefSection(
+                title: section.title,
+                source: sectionBucket?.source,
+                entries: entries.map(Self.mapEntry)
+            )
+        }
+    }
+
+    /// A section's identity for placement: which connector, and for Slack which half.
+    struct Bucket: Equatable {
+        let source: ConnectorID
+        let audience: String
+    }
+
+    /// The audience an item was stamped with at normalize time (`for-you` / `group`),
+    /// or `""` for sources that aren't split.
+    static func audience(of item: BriefItem) -> String {
+        let known: Set<String> = ["for-you", "group"]
+        return item.urgencyHints.map(\.rawValue).first(where: known.contains) ?? ""
+    }
+
     /// Maps a single DTO entry into a ``BriefEntry``, normalizing empty optionals to
     /// `nil` and parsing the url string. Shared by the lead and section entries.
     static func mapEntry(_ entry: SynthesizedBrief.Entry) -> BriefEntry {
@@ -281,7 +376,9 @@ public struct Synthesizer: Sendable {
             detail: entry.detail.flatMap { $0.isEmpty ? nil : $0 },
             url: entry.url.flatMap(URL.init(string:)),
             priority: entry.priority,
-            ctaLabel: entry.ctaLabel.flatMap { $0.isEmpty ? nil : $0 }
+            ctaLabel: entry.ctaLabel.flatMap { $0.isEmpty ? nil : $0 },
+            // Provenance the model cited; ids it invented simply don't parse and drop out.
+            sourceItemIDs: entry.sourceItemIDs.compactMap { UUID(uuidString: $0.trimmingCharacters(in: .whitespaces)) }
         )
     }
 
@@ -299,7 +396,7 @@ public struct Synthesizer: Sendable {
         schema: .object([
             "type": "object",
             "additionalProperties": false,
-            "required": .array(["masthead", "lede", "mood", "lead", "sections"]),
+            "required": .array(["masthead", "lede", "summary", "mood", "sections"]),
             "properties": .object([
                 "masthead": .object([
                     "type": "string",
@@ -307,7 +404,11 @@ public struct Synthesizer: Sendable {
                 ]),
                 "lede": .object([
                     "type": "string",
-                    "description": "One or two sentences of editorial prose summarizing the day.",
+                    "description": "One short sentence — a kicker under the masthead.",
+                ]),
+                "summary": .object([
+                    "type": "string",
+                    "description": "The 'Daybrief' overview: 2-4 sentences summarizing the WHOLE day across ALL sources (mail, calendar, Slack, tasks). The headline card the reader sees first.",
                 ]),
                 "mood": .object([
                     "type": "string",
@@ -319,7 +420,6 @@ public struct Synthesizer: Sendable {
                     something big — a launch, a major meeting, a milestone).
                     """,
                 ]),
-                "lead": leadSchema,
                 "sections": .object([
                     "type": "array",
                     "items": sectionSchema,
@@ -328,22 +428,25 @@ public struct Synthesizer: Sendable {
         ])
     )
 
-    /// The lead-story schema: a nullable entry object (the single most important item
-    /// of the day, not repeated in `sections`), or `null` on a quiet day.
-    private static let leadSchema: JSONValue = .object([
-        "type": .array(["object", "null"]),
-        "additionalProperties": false,
-        "required": .array(["headline", "detail", "url", "priority", "ctaLabel"]),
-        "description": "The single most important item of the day, or null when nothing leads.",
-        "properties": entryProperties,
-    ])
-
     private static let sectionSchema: JSONValue = .object([
         "type": "object",
         "additionalProperties": false,
-        "required": .array(["title", "entries"]),
+        "required": .array(["title", "source", "audience", "entries"]),
         "properties": .object([
-            "title": .object(["type": "string"]),
+            "title": .object([
+                "type": "string",
+                "description": "The source's display name, e.g. 'Gmail' — or 'Slack — For you' / 'Slack — Group' for the two Slack sections.",
+            ]),
+            "source": .object([
+                "type": "string",
+                "enum": .array(["gmail", "gcal", "slack", "notion"]),
+                "description": "The connector this group is for. One section per source that has items; Slack gets two.",
+            ]),
+            "audience": .object([
+                "type": "string",
+                "enum": .array(["for-you", "group", ""]),
+                "description": "For Slack, which half this section covers, matching the items' audience urgency hint. Empty for every other source.",
+            ]),
             "entries": .object([
                 "type": "array",
                 "items": entrySchema,
@@ -354,13 +457,18 @@ public struct Synthesizer: Sendable {
     private static let entrySchema: JSONValue = .object([
         "type": "object",
         "additionalProperties": false,
-        "required": .array(["headline", "detail", "url", "priority", "ctaLabel"]),
+        "required": .array(["headline", "detail", "url", "priority", "ctaLabel", "sourceItemIDs"]),
         "properties": entryProperties,
     ])
 
     /// The shared property set for an entry object, reused by both a section entry
     /// and the (nullable) lead story.
     private static let entryProperties: JSONValue = .object([
+        "sourceItemIDs": .object([
+            "type": "array",
+            "items": .object(["type": "string"]),
+            "description": "The `id` values of the ITEMS this entry was written from — at least one, copied exactly.",
+        ]),
         "headline": .object(["type": "string"]),
         "detail": .object([
             "type": .array(["string", "null"]),

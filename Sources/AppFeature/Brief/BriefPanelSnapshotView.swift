@@ -44,36 +44,22 @@ public struct BriefPanelSnapshotView: View {
                     accent: editionAccent
                 )
 
-                if !brief.lede.isEmpty {
-                    Text(brief.lede)
-                        .font(DaybriefTheme.serifItalic(16))
-                        .foregroundStyle(DaybriefTheme.ink.opacity(0.85))
-                        .lineSpacing(4)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                if !vm.summary.isEmpty {
+                    DaybriefSummaryCard(summary: vm.summary, accent: editionAccent)
                 }
 
-                if let lead = vm.lead {
-                    BriefLeadView(
-                        lead: lead,
-                        ctaLabel: vm.leadCTALabel ?? "Let's do it",
-                        accent: editionAccent,
-                        // The offscreen `ImageRenderer` pass can't rasterize Liquid
-                        // Glass, so use the starburst CTA in snapshots.
-                        usesGlassCTA: false
-                    )
-                }
-
-                VStack(alignment: .leading, spacing: 26) {
-                    ForEach(vm.sections.filter { !$0.entries.isEmpty }) { section in
-                        BriefSectionView(
-                            section: section,
-                            ctaLabels: ctaLabels,
-                            accent: editionAccent,
-                            usesGlassCTA: false
-                        )
-                        .padding(16)
-                        .editorialCard()
+                // Collapsed-by-default source dropdowns (the snapshot shows the default
+                // state the reader sees on open).
+                if !vm.sections.allSatisfy({ $0.entries.isEmpty }) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        ForEach(vm.sections.filter { !$0.entries.isEmpty }) { section in
+                            BriefSourceDropdown(
+                                section: section,
+                                ctaLabels: ctaLabels,
+                                accent: editionAccent,
+                                startsExpanded: true
+                            )
+                        }
                     }
                 }
 

@@ -231,39 +231,24 @@ public struct BriefPanelView: View {
                 accent: editionAccent
             )
 
-            if !brief.lede.isEmpty {
-                Text(brief.lede)
-                    .font(DaybriefTheme.serifItalic(16))
-                    .foregroundStyle(DaybriefTheme.ink.opacity(0.85))
-                    .lineSpacing(4)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            // The headline "Daybrief" card: a holistic summary of everything collected
+            // today, across all sources. Replaces the old single lead story.
+            if !vm.summary.isEmpty {
+                DaybriefSummaryCard(summary: vm.summary, accent: editionAccent)
             }
 
-            // The lead story, set large directly under the lede and apart from the
-            // sections below. The engine keeps it out of `sections`, so it is not
-            // duplicated.
-            if let lead = vm.lead {
-                BriefLeadView(
-                    lead: lead,
-                    ctaLabel: vm.leadCTALabel ?? "Let's do it",
-                    accent: editionAccent,
-                    onDismiss: dismiss
-                )
-            }
-
-            // On a quiet day (no lead, no entries) nothing is rendered here — the lede
-            // under the hero already carries it; no separate "quiet day" card.
+            // The rest of the brief, grouped by source into collapsible dropdowns (one per
+            // connector with updates), collapsed by default. On a quiet day with no
+            // entries nothing renders here — the Daybrief summary carries the day.
             if !vm.sections.allSatisfy({ $0.entries.isEmpty }) {
-                VStack(alignment: .leading, spacing: 26) {
+                VStack(alignment: .leading, spacing: 12) {
                     ForEach(vm.sections.filter { !$0.entries.isEmpty }) { section in
-                        BriefSectionView(
+                        BriefSourceDropdown(
                             section: section,
                             ctaLabels: ctaLabels,
                             accent: editionAccent,
                             onDismiss: dismiss
                         )
-                        .modifier(EditorialCardModifier())
                     }
                 }
             }
