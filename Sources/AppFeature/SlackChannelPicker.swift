@@ -37,7 +37,12 @@ struct SlackChannelPicker: View {
                 channelList
             }
         }
-        .task { await model.loadSlackChannels() }
+        // Only when we don't already have them: re-entering the pane shouldn't drop
+        // back into a loading state, and the list changes rarely.
+        .task {
+            guard model.slackChannels.isEmpty else { return }
+            await model.loadSlackChannels()
+        }
     }
 
     private var header: some View {

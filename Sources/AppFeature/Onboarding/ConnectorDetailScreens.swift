@@ -145,13 +145,60 @@ private struct ExpectScreenCallout: View {
 /// done top bar, the scrolling body, and a sticky footer holding the inline error
 /// plus the primary connect / done action. Keeps all three screens consistent and
 /// the chrome out of the per-connector content.
+/// Where a connector screen is being shown, which decides its chrome.
+enum ConnectorChrome {
+    /// A modal sheet during onboarding: its own back bar, footer and fixed size.
+    case sheet
+    /// Embedded in a Settings pane: no bar, no fixed size, no scroll container — the
+    /// pane already provides all three, and duplicating them is what made setup feel
+    /// like a different app.
+    case inline
+}
+
+private struct ConnectorChromeKey: EnvironmentKey {
+    static let defaultValue: ConnectorChrome = .sheet
+}
+
+extension EnvironmentValues {
+    /// The chrome a connector screen should draw around itself.
+    var connectorChrome: ConnectorChrome {
+        get { self[ConnectorChromeKey.self] }
+        set { self[ConnectorChromeKey.self] = newValue }
+    }
+}
+
 private struct ConnectorDetailScaffold<Body: View, Footer: View>: View {
     let onClose: () -> Void
     let lastError: String?
     @ViewBuilder let content: Body
     @ViewBuilder let footer: Footer
 
+    @Environment(\.connectorChrome) private var chrome
+
     var body: some View {
+        switch chrome {
+        case .sheet: sheetBody
+        case .inline: inlineBody
+        }
+    }
+
+    /// Embedded in a pane: just the content and its actions, on the pane's own paper.
+    private var inlineBody: some View {
+        VStack(alignment: .leading, spacing: 22) {
+            content
+
+            VStack(spacing: 12) {
+                if let lastError {
+                    DBInlineError(message: lastError)
+                }
+                footer
+            }
+            .padding(.top, 4)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var sheetBody: some View {
         VStack(spacing: 0) {
             HStack {
                 Button {

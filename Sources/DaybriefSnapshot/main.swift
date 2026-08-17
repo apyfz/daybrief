@@ -1,7 +1,9 @@
 import AppFeature
 import AppKit
+import ConnectorKit
 import BriefRender
 import DaybriefCore
+import SlackConnector
 import Foundation
 import SwiftUI
 
@@ -137,8 +139,97 @@ func makeSampleBrief() -> Brief {
     )
 }
 
+/// A representative connected state for the Settings snapshot: two Google accounts,
+/// Slack and Notion, with a handful of Slack channels and some picked.
+@MainActor
+func makeSettingsModel() -> AppModel {
+    let model = AppModel.preview(brief: makeSampleBrief())
+    func account(_ id: ConnectorID, _ label: String) -> Account {
+        Account(
+            connectorId: id,
+            label: label,
+            spaceKey: "personal",
+            secretRef: SecretRef(service: "co.daybrief.token.\(id.rawValue)", account: label)
+        )
+    }
+    let connections = [
+        Connection(connectorId: .gcal, displayName: "Google Calendar",
+                   accounts: [account(.gcal, "alim@crispy.studio")], isEnabled: true),
+        Connection(connectorId: .gmail, displayName: "Gmail",
+                   accounts: [account(.gmail, "alim@crispy.studio")], isEnabled: true),
+        Connection(connectorId: .slack, displayName: "Slack",
+                   accounts: [account(.slack, "Crispy Studio")], isEnabled: true),
+        Connection(connectorId: .notion, displayName: "Notion",
+                   accounts: [], isEnabled: true),
+    ]
+    let channels = [
+        "core-team", "deendesk", "operations", "pr", "practa", "random", "updates",
+    ].enumerated().map { index, name in
+        SlackConnector.MemberChannel(id: "C\(index)", name: name, isPrivate: index % 3 == 0)
+    }
+    model.applyPreviewConnections(
+        connections,
+        slackChannels: channels,
+        selectedSlackChannelIDs: ["C0", "C1", "C2", "C3", "C4"]
+    )
+    return model
+}
+
+@MainActor
+func renderSettings(to outputPath: String) throws {
+    DaybriefTheme.registerBundledFonts()
+    // Renders each pane's content stacked, since `ImageRenderer` can't draw the live
+    // window's ScrollView. Pass a pane name to render just that one.
+    let model = makeSettingsModel()
+    let requested = CommandLine.arguments.compactMap { SettingsPane(rawValue: $0) }
+    let panes = requested.isEmpty ? SettingsPane.allCases : requested
+    // `--window` composes the real sidebar beside one pane, at the window's own size.
+    let view: AnyView
+    if CommandLine.arguments.contains("--window") {
+        view = AnyView(
+            SettingsWindowSnapshotView(model: model, pane: panes.first ?? .tools)
+                .frame(width: 820, height: 560)
+                .environment(\.colorScheme, .light)
+        )
+    } else {
+        view = AnyView(
+            VStack(alignment: .leading, spacing: 34) {
+                ForEach(panes) { pane in
+                    SettingsPaneContent(model: model, pane: pane)
+                }
+            }
+            .padding(32)
+            .frame(width: 620, alignment: .leading)
+            .background(DaybriefTheme.paper)
+            .environment(\.colorScheme, .light)
+        )
+    }
+
+    let renderer = ImageRenderer(content: view)
+    renderer.scale = 2
+    renderer.isOpaque = true
+    guard let cgImage = renderer.cgImage,
+          let png = NSBitmapImageRep(cgImage: cgImage).representation(using: .png, properties: [:])
+    else {
+        FileHandle.standardError.write(Data("DaybriefSnapshot: could not render Settings.\n".utf8))
+        exit(1)
+    }
+    try png.write(to: URL(fileURLWithPath: outputPath))
+    FileHandle.standardError.write(
+        Data("DaybriefSnapshot: wrote \(outputPath) (\(cgImage.width)×\(cgImage.height)px)\n".utf8)
+    )
+}
+
 @MainActor
 func render() throws {
+    // `--settings` renders the Settings window instead of the brief panel, so its
+    // layout can be reviewed offscreen the same way the edition is.
+    if CommandLine.arguments.contains("--settings") {
+        let path = CommandLine.arguments.first { $0.hasSuffix(".png") } ?? "/tmp/daybrief-settings.png"
+        try renderSettings(to: path)
+        return
+    }
+
     let outputPath = CommandLine.arguments.count > 1
         ? CommandLine.arguments[1]
         : "/tmp/daybrief-panel.png"

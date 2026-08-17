@@ -918,6 +918,22 @@ public final class AppModel {
         self.setup = setup
     }
 
+    /// Seeds the connection / Slack state a Settings snapshot needs, without touching
+    /// the repositories or the network.
+    ///
+    /// Preview-only seam, mirroring ``applyPreviewState(brief:setup:)``: rendering
+    /// Settings offscreen is how its layout gets reviewed, and an empty model renders a
+    /// screen nobody actually sees.
+    public func applyPreviewConnections(
+        _ connections: [Connection],
+        slackChannels: [SlackConnector.MemberChannel] = [],
+        selectedSlackChannelIDs: Set<String> = []
+    ) {
+        self.connections = connections
+        self.slackChannels = slackChannels
+        self.selectedSlackChannelIDs = selectedSlackChannelIDs
+    }
+
     /// Reloads ``spaces`` and ``connections`` from the repositories without touching
     /// `SMAppService`, the prompt files, or the setup phase.
     ///

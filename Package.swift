@@ -102,7 +102,7 @@ let package = Package(
 
         .executableTarget(
             name: "DaybriefSnapshot",
-            dependencies: ["AppFeature", "DaybriefCore", "DaybriefUI", "BriefRender"]
+            dependencies: ["AppFeature", "DaybriefCore", "DaybriefUI", "BriefRender", "ConnectorKit", "SlackConnector"]
         ),
 
         // Renders each widget family at its exact point size to a PNG (offscreen, no

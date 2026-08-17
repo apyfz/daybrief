@@ -11,102 +11,195 @@ import SwiftUI
 /// the provider + model picker, the daily brief time, the launch-at-login toggle
 /// (driven by `SMAppService` live status through `model.setLaunchAtLogin`), and a
 /// button to open the user-editable prompt/template files in Finder.
-public struct SettingsView: View {
-    @Bindable private var model: AppModel
+/// The Tools pane: a list of every connector that pushes into that connector's own
+/// setup, in place.
+///
+/// Selecting a tool used to throw up a fixed 560×640 modal with its own back bar and
+/// footer — a separate world for the one task that most needs to feel part of the app.
+/// The detail now lives in this pane, so setting up a tool is somewhere you go rather
+/// than something that interrupts you.
+struct ToolsPane: View {
+    @Bindable var model: AppModel
+    @State private var selected: OnboardingConnector?
 
-    /// Creates the settings screen bound to `model`.
-    public init(model: AppModel) {
-        self.model = model
-    }
-
-    public var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 28) {
-                header
-
-                SettingsSection(title: "Connected tools", systemImage: "link") {
-                    ConnectionsSection(model: model)
-                }
-
-                if model.connections.contains(where: { $0.connectorId == .slack && !$0.accounts.isEmpty }) {
-                    SettingsSection(title: "Slack channels", icon: DaybriefIcon.slack) {
-                        SlackChannelsSection(model: model)
-                    }
-                }
-
-                SettingsSection(title: "AI model", systemImage: "sparkles") {
-                    ModelSection(model: model)
-                }
-
-                SettingsSection(title: "Daily brief", systemImage: "sun.max") {
-                    BriefScheduleSection(model: model)
-                }
-
-                SettingsSection(title: "App", systemImage: "gearshape") {
-                    AppSection(model: model)
-                }
-            }
-            .padding(.horizontal, 36)
-            .padding(.vertical, 32)
-            .frame(maxWidth: 640, alignment: .leading)
-            .frame(maxWidth: .infinity)
+    var body: some View {
+        if let selected {
+            ConnectorDetail(model: model, connector: selected) { self.selected = nil }
+        } else {
+            connectorList
         }
-        .background(DaybriefTheme.paper)
-        .frame(minWidth: 620, minHeight: 560)
     }
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Settings")
-                .font(DaybriefTheme.serifDisplay(30))
-                .foregroundStyle(DaybriefTheme.ink)
-            Text("Tune what goes into your morning brief.")
-                .font(DaybriefTheme.serifBody(14))
-                .foregroundStyle(DaybriefTheme.inkSecondary)
+    private var connectorList: some View {
+        SettingsGroup {
+            ForEach(Array(OnboardingConnector.allCases.enumerated()), id: \.element.id) { index, connector in
+                if index > 0 { SettingsRowDivider() }
+                ConnectorRow(
+                    model: model,
+                    connector: connector,
+                    action: { selected = connector }
+                )
+            }
         }
     }
 }
 
-/// A titled settings group with a leading icon and a soft card body.
-private struct SettingsSection<Content: View>: View {
-    let title: String
-    /// The section glyph. An `Image` rather than an SF Symbol name so a section about
-    /// one service can carry that service's own mark (see the Slack channels section).
-    let icon: Image
-    @ViewBuilder let content: Content
+/// One connector in the Tools list: mark, name, what it's reading, and a chevron.
+///
+/// Deliberately one row per tool. The previous screen spent two — a connector row and
+/// a repeated account row underneath — and put a loud "Add or reconnect" pill on every
+/// one, so the page read as a wall of buttons rather than a list of what's connected.
+private struct ConnectorRow: View {
+    @Bindable var model: AppModel
+    let connector: OnboardingConnector
+    let action: () -> Void
 
-    init(title: String, systemImage: String, @ViewBuilder content: () -> Content) {
-        self.init(title: title, icon: Image(systemName: systemImage), content: content)
-    }
-
-    init(title: String, icon: Image, @ViewBuilder content: () -> Content) {
-        self.title = title
-        self.icon = icon
-        self.content = content()
-    }
+    @State private var isHovering = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                icon
-                    .daybriefIcon(size: 13)
-                    .foregroundStyle(DaybriefTheme.accent)
-                Text(title)
-                    .font(.system(size: 13, weight: .semibold))
+        Button(action: action) {
+            HStack(spacing: 12) {
+                DaybriefIcon.connector(connector.connectorID)
+                    .daybriefIcon(size: 15)
                     .foregroundStyle(DaybriefTheme.ink)
-                    .textCase(.uppercase)
-                    .tracking(0.5)
+                    .frame(width: 28, height: 28)
+                    .background(DaybriefTheme.accent.opacity(0.3), in: RoundedRectangle(cornerRadius: 7))
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(connector.name)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(DaybriefTheme.ink)
+                    Text(status)
+                        .font(.system(size: 11))
+                        .foregroundStyle(DaybriefTheme.inkSecondary)
+                }
+
+                Spacer(minLength: 12)
+
+                if !isConnected {
+                    Text("Set up")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(DaybriefTheme.ink)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(DaybriefTheme.accent.opacity(0.35), in: Capsule())
+                }
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(DaybriefTheme.inkSecondary)
             }
-            VStack(alignment: .leading, spacing: 14) {
-                content
+            .padding(.vertical, 10)
+            .padding(.horizontal, 8)
+            .background {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(DaybriefTheme.ink.opacity(isHovering ? 0.04 : 0))
             }
-            .padding(18)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.white.opacity(0.5), in: RoundedRectangle(cornerRadius: 14))
-            .overlay(
-                RoundedRectangle(cornerRadius: 14)
-                    .stroke(DaybriefTheme.ink.opacity(0.1), lineWidth: 1)
-            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .pointerStyle(.link)
+        .animation(.easeOut(duration: 0.12), value: isHovering)
+    }
+
+    private var accounts: [Account] {
+        model.connections.first { $0.connectorId == connector.connectorID }?.accounts ?? []
+    }
+
+    private var isConnected: Bool { !accounts.isEmpty }
+
+    /// What this tool is currently contributing, in the row itself — the account it
+    /// reads, and for Slack how many channels are covered.
+    private var status: String {
+        guard let first = accounts.first else { return connector.surfaces }
+        var parts = [first.label]
+        if accounts.count > 1 { parts.append("+\(accounts.count - 1) more") }
+        if connector.connectorID == .slack {
+            let count = model.selectedSlackChannelIDs.count
+            parts.append(count == 1 ? "1 channel" : "\(count) channels")
+        }
+        return parts.joined(separator: " · ")
+    }
+}
+
+/// A connector's setup and accounts, shown inside the Tools pane.
+private struct ConnectorDetail: View {
+    @Bindable var model: AppModel
+    let connector: OnboardingConnector
+    let onBack: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Button(action: onBack) {
+                HStack(spacing: 5) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text("All tools")
+                        .font(.system(size: 12, weight: .medium))
+                }
+                .foregroundStyle(DaybriefTheme.inkSecondary)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .pointerStyle(.link)
+            .accessibilityLabel("Back to all tools")
+
+            if let connection = model.connections.first(where: { $0.connectorId == connector.connectorID }),
+               !connection.accounts.isEmpty {
+                SettingsGroup(title: "Accounts") {
+                    ForEach(Array(connection.accounts.enumerated()), id: \.element.id) { index, account in
+                        if index > 0 { SettingsRowDivider() }
+                        ConnectionRow(model: model, connection: connection, account: account)
+                    }
+                }
+            }
+
+            if connector.connectorID == .slack,
+               model.connections.contains(where: { $0.connectorId == .slack && !$0.accounts.isEmpty }) {
+                SettingsGroup(title: "Channels") {
+                    SlackChannelsSection(model: model)
+                }
+            }
+
+            ConnectorDetailScreen(model: model, connector: connector, onClose: onBack)
+                .environment(\.connectorChrome, .inline)
+        }
+    }
+}
+
+/// The Brief pane: when the edition fires, and the prompt/template that gives it voice.
+struct BriefPane: View {
+    @Bindable var model: AppModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            SettingsGroup(title: "Delivery") {
+                BriefScheduleSection(model: model)
+            }
+            SettingsGroup(title: "Voice") {
+                BriefVoiceSection(model: model)
+            }
+        }
+    }
+}
+
+/// The Model pane: provider, key, and model selection.
+struct ModelPane: View {
+    @Bindable var model: AppModel
+
+    var body: some View {
+        ModelSection(model: model)
+    }
+}
+
+/// The App pane: how Daybrief behaves on the machine.
+struct AppPane: View {
+    @Bindable var model: AppModel
+
+    var body: some View {
+        SettingsGroup {
+            AppSection(model: model)
         }
     }
 }
@@ -416,6 +509,34 @@ private struct BriefScheduleSection: View {
     }
 }
 
+// MARK: - Voice
+
+/// The prompt + render template that give the edition its voice, opened in Finder.
+/// Lives with the brief rather than under App: it changes what the edition reads like,
+/// not how the app behaves.
+private struct BriefVoiceSection: View {
+    @Bindable var model: AppModel
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Prompt & template")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(DaybriefTheme.ink)
+                Text("Edit the synthesis prompt and render template to retune the brief's voice and layout.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(DaybriefTheme.inkSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 12)
+            DBSecondaryButton("Edit in Finder", systemImage: "square.and.pencil") {
+                model.openPromptTemplateInFinder()
+            }
+        }
+        .padding(.vertical, 10)
+    }
+}
+
 // MARK: - App
 
 /// Launch-at-login toggle and the prompt/template editor button.
@@ -436,24 +557,6 @@ private struct AppSection: View {
             }
             .toggleStyle(.switch)
             .tint(DaybriefTheme.accent)
-
-            Divider().overlay(DaybriefTheme.ink.opacity(0.06))
-
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Brief voice & template")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(DaybriefTheme.ink)
-                    Text("Edit the synthesis prompt and render template to retune the brief's voice and layout.")
-                        .font(.system(size: 11))
-                        .foregroundStyle(DaybriefTheme.inkSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: 12)
-                DBSecondaryButton("Edit in Finder", systemImage: "square.and.pencil") {
-                    model.openPromptTemplateInFinder()
-                }
-            }
         }
     }
 
