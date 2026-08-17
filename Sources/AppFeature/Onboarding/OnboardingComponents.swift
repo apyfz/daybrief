@@ -337,7 +337,7 @@ struct DBDetailSection<Content: View>: View {
 /// A tappable hub row for one connector: icon, name, a one-line "what it surfaces",
 /// a status pill (Not connected / ✓ Connected <label>), and a Set up / Edit action.
 struct DBConnectorRow: View {
-    let symbol: String
+    let icon: Image
     let name: String
     let surfaces: String
     let isConnected: Bool
@@ -347,8 +347,8 @@ struct DBConnectorRow: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 13) {
-                Image(systemName: symbol)
-                    .font(.system(size: 17, weight: .medium))
+                icon
+                    .daybriefIcon(size: 18)
                     .foregroundStyle(DaybriefTheme.ink)
                     .frame(width: 38, height: 38)
                     .background(DaybriefTheme.accent.opacity(0.35), in: RoundedRectangle(cornerRadius: 10, style: .continuous))

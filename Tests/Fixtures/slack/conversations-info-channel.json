@@ -1,0 +1,12 @@
+{
+  "ok": true,
+  "channel": {
+    "id": "C01ENG",
+    "created": 1700000000,
+    "name": "engineering",
+    "is_channel": true,
+    "is_member": true,
+    "is_private": false,
+    "last_read": "1750119000.000050"
+  }
+}

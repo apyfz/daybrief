@@ -18,6 +18,30 @@ struct SlackRawEnvelope {
         case directMessage = "dm"
         /// A multi-person group DM (`conversations.history` on an `mpim`).
         case groupDM = "mpim"
+        /// An unread message in a channel the user belongs to, without an @-mention
+        /// (`conversations.history` on a `public_channel`/`private_channel`).
+        case channel
+
+        /// Who the message was aimed at, which drives the brief's two Slack sections.
+        ///
+        /// A 1:1 DM or an @-mention names the reader personally and usually owes a
+        /// reply; a group DM or channel message is ambient. Deriving this here — from
+        /// the origin `fetch` already recorded — keeps the split deterministic instead
+        /// of leaving it to the model's judgement.
+        var audience: Audience {
+            switch self {
+            case .mention, .directMessage: return .forYou
+            case .groupDM, .channel: return .group
+            }
+        }
+    }
+
+    /// Which of the brief's two Slack sections a message belongs in.
+    enum Audience: String {
+        /// Addressed to the reader: 1:1 DMs and @-mentions.
+        case forYou = "for-you"
+        /// Ambient group traffic: group DMs and channel messages.
+        case group
     }
 
     /// Where the message came from.

@@ -1,0 +1,15 @@
+{
+  "ok": true,
+  "channel": {
+    "id": "G05GROUP",
+    "created": 1700001000,
+    "name": "mpdm-alim--sam--dana-1",
+    "is_channel": true,
+    "is_group": false,
+    "is_im": false,
+    "is_mpim": true,
+    "is_member": true,
+    "is_private": true,
+    "last_read": "1750119000.000050"
+  }
+}

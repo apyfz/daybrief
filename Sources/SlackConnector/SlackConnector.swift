@@ -48,13 +48,27 @@ public struct SlackConnector: Connector {
     public static let id: ConnectorID = .slack
     public static let displayName = "Slack"
 
-    /// Maximum DM/MPIM channels swept per account in one fetch (keeps a single brief
-    /// well inside the Tier-3 budget even for very chatty workspaces).
-    private static let maxDMChannels = 30
-    /// Upper bound on messages pulled per DM channel: a DM's history request asks for
+    /// Maximum DM/MPIM conversations swept per account in one fetch. Sized to cover a
+    /// real workspace outright: the previous cap of 30 silently truncated a 73-strong
+    /// list ordered group-DMs-first, so most 1:1 DMs were never probed at all.
+    private static let maxDMChannels = 100
+    /// The most channels a reader may choose to cover.
+    ///
+    /// Unread state is per-conversation — `conversations.list` doesn't carry it, so every
+    /// covered channel costs a `conversations.info` call on every brief. A real workspace
+    /// is far bigger than a brief should read: this account belongs to 66 channels, which
+    /// alone would blow the fetch budget. Fifteen is enough for the channels someone
+    /// actually follows while keeping the sweep a few seconds and the Group section a
+    /// digest rather than a feed.
+    public static let maxSelectableChannels = 15
+    /// Upper bound on messages pulled per DM: a DM's history request asks for
     /// `min(unread, historyLimit)` so a single very stale, high-unread channel can't
     /// blow the page budget (Tier-3 honors up to 1000).
     private static let historyLimit = 200
+    /// Upper bound on messages pulled per channel. Far tighter than ``historyLimit``
+    /// because channel unread is ambient: a 200-message backlog should contribute a few
+    /// recent lines to the brief, not two hundred.
+    private static let channelHistoryLimit = 20
 
     /// Message subtypes that are pure channel/system events (joins, renames, pins, …) and
     /// carry nothing worth briefing. Everything else — including **bot/app messages, file
@@ -77,6 +91,7 @@ public struct SlackConnector: Connector {
 
     private let transport: any HTTPTransport
     private let tokenProvider: any TokenProvider
+    private let includedChannelIDs: Set<String>
 
     public let auth: AuthStrategy = .pastedUserToken(SlackSetup.tokenSpec)
     public let fetchTimeout: Duration
@@ -87,14 +102,23 @@ public struct SlackConnector: Connector {
     ///   - transport: HTTP seam (defaults to ``URLSessionHTTPTransport``); inject
     ///     ``MockHTTPTransport`` in tests.
     ///   - tokenProvider: Resolves the stored `xoxp-` user token per account.
-    ///   - fetchTimeout: The orchestrator's per-connector budget (default 20s).
+    ///   - includedChannelIDs: The channels the reader chose to cover (at most
+    ///     ``maxSelectableChannels``). Channel coverage is opt-*in*: an empty set skips
+    ///     the channel sweep entirely, costing no API calls, and DMs and @-mentions are
+    ///     unaffected either way.
+    ///   - fetchTimeout: The orchestrator's per-connector budget. Slack needs a longer
+    ///     budget than the 20s default: unread state is per-conversation
+    ///     (`conversations.info` carries it; `conversations.list` doesn't), so a real
+    ///     workspace costs on the order of a hundred sequential calls.
     public init(
         transport: any HTTPTransport = URLSessionHTTPTransport(),
         tokenProvider: any TokenProvider,
-        fetchTimeout: Duration = .seconds(20)
+        includedChannelIDs: Set<String> = [],
+        fetchTimeout: Duration = .seconds(45)
     ) {
         self.transport = transport
         self.tokenProvider = tokenProvider
+        self.includedChannelIDs = includedChannelIDs
         self.fetchTimeout = fetchTimeout
     }
 
@@ -122,10 +146,13 @@ public struct SlackConnector: Connector {
                     "auth.test did not return a user_id; skipping the Slack mentions search and returning DMs only."
                 )
             }
-            // Only surface unread DMs from the last few days (covers a weekend) so old,
+            // Only surface unread from the last few days (covers a weekend) so old,
             // long-ignored unread doesn't clutter the brief.
             let unreadCutoff = request.since.addingTimeInterval(-Self.maxUnreadAgeDays * 24 * 60 * 60)
             accountItems += try await fetchDMs(
+                token: token, account: account, identity: identity, unreadCutoff: unreadCutoff
+            )
+            accountItems += try await fetchChannels(
                 token: token, account: account, identity: identity, unreadCutoff: unreadCutoff
             )
             // Resolve sender user ids → display names so the brief shows names, not `U…` ids.
@@ -215,17 +242,11 @@ public struct SlackConnector: Connector {
         }
     }
 
-    /// Unread DMs + group-DMs via `conversations.list`, then per channel a
-    /// `conversations.info` read of the unread count and, when non-zero, a
-    /// `conversations.history` pull of exactly that many newest messages.
+    /// Unread DMs + group-DMs via `conversations.list`, then per conversation the
+    /// unread tail from ``unreadMessages(channelID:token:limit:)``.
     ///
-    /// This is **unread-based, not window-based**: `conversations.info`'s per-user
-    /// `unread_count_display` tells us how many messages the user hasn't read, and
-    /// `conversations.history` returns newest-first, so the `unread` most-recent
-    /// messages *are* the unread ones — regardless of how old they are. A DM that
-    /// went unread for days still surfaces; a fully-read channel is skipped with no
-    /// history call. (`unread_count_display` requires the `im:read`/`mpim:read`
-    /// scopes the connector already documents.)
+    /// This is **unread-based, not window-based**: a DM that went unread for days still
+    /// surfaces, and a fully-read conversation is skipped with no history call.
     private func fetchDMs(
         token: String, account: Account, identity: SelfIdentity?, unreadCutoff: Date
     ) async throws -> [RawItem] {
@@ -242,57 +263,209 @@ public struct SlackConnector: Connector {
         for channel in channels {
             try Task.checkCancellation()
             guard let channelID = channel["id"]?.string else { continue }
-
-            // Per-user unread count for this DM. `conversations.list` doesn't carry it,
-            // so ask `conversations.info` (which returns the authed user's view).
-            var infoComponents = Self.apiComponents(method: "conversations.info")
-            infoComponents.queryItems = [
-                URLQueryItem(name: "channel", value: channelID),
-            ]
-            let infoJSON = try await get(infoComponents, token: token, method: "conversations.info")
-            let unread = infoJSON["channel"]?["unread_count_display"]?.int ?? 0
-            // Nothing unread → don't spend a history call; this channel contributes nothing.
-            guard unread > 0 else { continue }
-
-            // Pull only the unread tail. Slack returns newest-first with no oldest/latest,
-            // so the `unread` most-recent messages are exactly the unread ones (capped at
-            // the page size as a safety bound for very stale, high-count channels).
-            let limit = min(unread, Self.historyLimit)
-            var historyComponents = Self.apiComponents(method: "conversations.history")
-            historyComponents.queryItems = [
-                URLQueryItem(name: "channel", value: channelID),
-                URLQueryItem(name: "inclusive", value: "true"),
-                URLQueryItem(name: "limit", value: String(limit)),
-            ]
-            let historyJSON = try await get(historyComponents, token: token, method: "conversations.history")
-            let messages = historyJSON["messages"]?.array ?? []
-
+            let messages = try await unreadMessages(
+                channelID: channelID, token: token, limit: Self.historyLimit
+            )
             let isGroup = channel["is_mpim"]?.bool == true
-            for message in messages {
-                guard let ts = message["ts"]?.string else { continue }
-                // Skip only true system events (joins/renames/pins). Content-bearing
-                // subtypes — bot/app DMs, file shares, /me — are kept, so unread bot/file
-                // DMs surface instead of silently vanishing.
-                if let subtype = message["subtype"]?.string, Self.noiseSubtypes.contains(subtype) { continue }
-                // Skip the user's own messages — you don't need to act on what you sent.
-                if let identity, message["user"]?.string == identity.userID { continue }
-                // Skip unread that's older than the recency window (covers a weekend) so
-                // long-ignored stale DMs don't clutter the brief.
-                if let date = Self.date(fromSlackTS: ts), date < unreadCutoff { continue }
-                let envelope = SlackRawEnvelope(
-                    origin: isGroup ? .groupDM : .directMessage,
-                    channelName: channel["name"]?.string ?? channelID,
-                    message: message
-                )
-                items.append(RawItem(
-                    id: "dm:\(channelID):\(ts)",
-                    connectorId: Self.id,
-                    accountLabel: account.label,
-                    json: envelope.json
-                ))
-            }
+            items += Self.rawItems(
+                from: messages,
+                origin: isGroup ? .groupDM : .directMessage,
+                idPrefix: "dm",
+                channelID: channelID,
+                channelName: channel["name"]?.string ?? channelID,
+                account: account,
+                identity: identity,
+                unreadCutoff: unreadCutoff
+            )
         }
         return items
+    }
+
+    /// Unread messages in the channels the reader chose to cover, for the ambient
+    /// "group" half of the brief.
+    ///
+    /// Channels are *not* covered by the mentions search — `search.messages` only finds
+    /// messages that name the user — so without this sweep a workspace whose activity
+    /// lives in channels reads as completely quiet.
+    ///
+    /// Coverage is opt-in and capped at ``maxSelectableChannels``: nothing is swept until
+    /// the reader picks channels, and an unpicked channel costs no API calls at all.
+    ///
+    /// Private channels need `groups:read` on top of `channels:read`. When that scope is
+    /// missing Slack rejects the combined listing outright, so the connector retries
+    /// public-only rather than returning nothing: a partial sweep beats a blank section,
+    /// and the user can add the scope later without any other change.
+    private func fetchChannels(
+        token: String, account: Account, identity: SelfIdentity?, unreadCutoff: Date
+    ) async throws -> [RawItem] {
+        // No selection → no channel coverage, and not a single request spent on it.
+        guard !includedChannelIDs.isEmpty else { return [] }
+
+        let listJSON: JSONValue
+        do {
+            listJSON = try await listChannels(types: "public_channel,private_channel", token: token)
+        } catch let error as ConnectorError where error.kind == .auth {
+            Self.logger.warning(
+                "Listing private channels was rejected (groups:read is probably missing); sweeping public channels only."
+            )
+            listJSON = try await listChannels(types: "public_channel", token: token)
+        }
+        // Only channels the reader belongs to AND picked. The cap is applied here too,
+        // so a stored selection that predates a lower cap can't quietly overspend.
+        let channels = (listJSON["channels"]?.array ?? [])
+            .filter { $0["is_member"]?.bool == true }
+            .filter { Self.isIncluded($0, included: includedChannelIDs) }
+            .prefix(Self.maxSelectableChannels)
+
+        var items: [RawItem] = []
+        for channel in channels {
+            try Task.checkCancellation()
+            guard let channelID = channel["id"]?.string else { continue }
+            let messages = try await unreadMessages(
+                channelID: channelID, token: token, limit: Self.channelHistoryLimit
+            )
+            items += Self.rawItems(
+                from: messages,
+                origin: .channel,
+                idPrefix: "channel",
+                channelID: channelID,
+                channelName: channel["name"]?.string ?? channelID,
+                account: account,
+                identity: identity,
+                unreadCutoff: unreadCutoff
+            )
+        }
+        return items
+    }
+
+    // MARK: - Channel listing (for the settings UI)
+
+    /// One channel the user belongs to, as shown in Settings' opt-out list.
+    public struct MemberChannel: Sendable, Identifiable, Equatable, Hashable {
+        /// The Slack channel id (`C…`), the stable key an exclusion is stored under.
+        public let id: String
+        /// The channel's name without the leading `#`.
+        public let name: String
+        /// Whether it's a private channel (shown with a different glyph).
+        public let isPrivate: Bool
+    }
+
+    /// The channels `account` belongs to, sorted by name — the list Settings renders so
+    /// the user can uncheck the ones they don't want covered.
+    ///
+    /// Degrades the same way ``fetchChannels(token:account:identity:unreadCutoff:)``
+    /// does: without `groups:read` the private half is dropped rather than failing the
+    /// whole list.
+    public func memberChannels(for account: Account) async throws -> [MemberChannel] {
+        let token = try await tokenProvider.accessToken(for: account)
+        let listJSON: JSONValue
+        do {
+            listJSON = try await listChannels(types: "public_channel,private_channel", token: token)
+        } catch let error as ConnectorError where error.kind == .auth {
+            listJSON = try await listChannels(types: "public_channel", token: token)
+        }
+        return (listJSON["channels"]?.array ?? [])
+            .filter { $0["is_member"]?.bool == true }
+            .compactMap { channel in
+                guard let id = channel["id"]?.string, let name = channel["name"]?.string else { return nil }
+                return MemberChannel(id: id, name: name, isPrivate: channel["is_private"]?.bool == true)
+            }
+            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    /// One `conversations.list` page for the given comma-separated `types`.
+    private func listChannels(types: String, token: String) async throws -> JSONValue {
+        var components = Self.apiComponents(method: "conversations.list")
+        components.queryItems = [
+            URLQueryItem(name: "types", value: types),
+            URLQueryItem(name: "exclude_archived", value: "true"),
+            URLQueryItem(name: "limit", value: "1000"),
+        ]
+        return try await get(components, token: token, method: "conversations.list")
+    }
+
+    /// The unread tail of one conversation — `[]` when it is fully read.
+    ///
+    /// Slack exposes unread state two different ways and **only 1:1 DMs get the easy
+    /// one**: `conversations.info` returns `unread_count_display` for `im`s but omits it
+    /// entirely for group DMs and channels. Reading only that field (as this connector
+    /// used to) therefore treated every mpim and channel as fully read, which is why
+    /// group DMs could never appear in a brief.
+    ///
+    /// `last_read` *is* returned for all three, so it's the reliable signal: asking
+    /// `conversations.history` for everything after it yields exactly the unread
+    /// messages. `oldest` is exclusive by default, so the user's own last-read message
+    /// isn't re-surfaced.
+    private func unreadMessages(channelID: String, token: String, limit: Int) async throws -> [JSONValue] {
+        var infoComponents = Self.apiComponents(method: "conversations.info")
+        infoComponents.queryItems = [URLQueryItem(name: "channel", value: channelID)]
+        let infoJSON = try await get(infoComponents, token: token, method: "conversations.info")
+        let channel = infoJSON["channel"]
+
+        var historyComponents = Self.apiComponents(method: "conversations.history")
+        var query = [URLQueryItem(name: "channel", value: channelID)]
+
+        if let unread = channel?["unread_count_display"]?.int {
+            // A 1:1 DM: Slack counted the unread for us. Nothing unread → no history call.
+            guard unread > 0 else { return [] }
+            // History is newest-first, so the `unread` most-recent messages are the
+            // unread ones (capped for very stale, high-count conversations).
+            query.append(URLQueryItem(name: "inclusive", value: "true"))
+            query.append(URLQueryItem(name: "limit", value: String(min(unread, limit))))
+        } else if let lastRead = channel?["last_read"]?.string, (Double(lastRead) ?? 0) > 0 {
+            // A group DM or channel: no count, so read everything after `last_read`.
+            query.append(URLQueryItem(name: "oldest", value: lastRead))
+            query.append(URLQueryItem(name: "limit", value: String(limit)))
+        } else {
+            // Never opened (or an unreadable conversation): fall back to the newest
+            // messages and let the caller's recency cutoff decide what's worth showing.
+            query.append(URLQueryItem(name: "limit", value: String(limit)))
+        }
+
+        historyComponents.queryItems = query
+        let historyJSON = try await get(historyComponents, token: token, method: "conversations.history")
+        return historyJSON["messages"]?.array ?? []
+    }
+
+    /// Filters a conversation's unread messages down to the ones worth briefing and
+    /// wraps each in a ``SlackRawEnvelope``.
+    private static func rawItems(
+        from messages: [JSONValue],
+        origin: SlackRawEnvelope.Origin,
+        idPrefix: String,
+        channelID: String,
+        channelName: String,
+        account: Account,
+        identity: SelfIdentity?,
+        unreadCutoff: Date
+    ) -> [RawItem] {
+        messages.compactMap { message in
+            guard let ts = message["ts"]?.string else { return nil }
+            // Skip only true system events (joins/renames/pins). Content-bearing
+            // subtypes — bot/app DMs, file shares, /me — are kept, so unread bot/file
+            // messages surface instead of silently vanishing.
+            if let subtype = message["subtype"]?.string, noiseSubtypes.contains(subtype) { return nil }
+            // Skip the user's own messages — you don't need to act on what you sent.
+            if let identity, message["user"]?.string == identity.userID { return nil }
+            // Skip unread that's older than the recency window (covers a weekend) so
+            // long-ignored stale threads don't clutter the brief.
+            if let date = date(fromSlackTS: ts), date < unreadCutoff { return nil }
+            let envelope = SlackRawEnvelope(origin: origin, channelName: channelName, message: message)
+            return RawItem(
+                id: "\(idPrefix):\(channelID):\(ts)",
+                connectorId: id,
+                accountLabel: account.label,
+                json: envelope.json
+            )
+        }
+    }
+
+    /// Whether the reader picked this channel. Matched on id, and on name too so a
+    /// selection survives a channel being re-created under the same name.
+    private static func isIncluded(_ channel: JSONValue, included: Set<String>) -> Bool {
+        if let id = channel["id"]?.string, included.contains(id) { return true }
+        if let name = channel["name"]?.string, included.contains(name) { return true }
+        return false
     }
 
     // MARK: - Name resolution
@@ -403,7 +576,7 @@ public struct SlackConnector: Connector {
 
             let location: String
             switch envelope.origin {
-            case .mention:
+            case .mention, .channel:
                 location = envelope.channelName.map { "#\($0)" } ?? "a channel"
             case .directMessage:
                 location = "DM"
@@ -411,7 +584,13 @@ public struct SlackConnector: Connector {
                 location = envelope.channelName.map { "group DM \($0)" } ?? "a group DM"
             }
 
-            let hints: [UrgencyHint] = (envelope.origin == .mention) ? [.mention] : [.unread]
+            // The audience hint travels with the item so the pipeline can split Slack
+            // into "For you" and "Group" deterministically, rather than asking the model
+            // to infer placement from prose it just wrote.
+            let hints: [UrgencyHint] = [
+                envelope.origin == .mention ? .mention : .unread,
+                .other(envelope.origin.audience.rawValue),
+            ]
 
             return BriefItem(
                 id: Self.itemUUID(for: item.id),
@@ -450,7 +629,7 @@ public struct SlackConnector: Connector {
             return "\(sender) mentioned you in \(location)"
         case .directMessage:
             return "Direct message from \(sender)"
-        case .groupDM:
+        case .groupDM, .channel:
             return "\(sender) in \(location)"
         }
     }

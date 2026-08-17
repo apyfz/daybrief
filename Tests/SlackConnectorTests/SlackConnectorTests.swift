@@ -17,8 +17,16 @@ private func makeAccount(label: String = "Acme Workspace") -> Account {
     )
 }
 
-private func makeConnector(transport: MockHTTPTransport, token: String = "xoxp-test-token") -> SlackConnector {
-    SlackConnector(transport: transport, tokenProvider: StaticTokenProvider(token: token))
+private func makeConnector(
+    transport: MockHTTPTransport,
+    token: String = "xoxp-test-token",
+    includedChannelIDs: Set<String> = []
+) -> SlackConnector {
+    SlackConnector(
+        transport: transport,
+        tokenProvider: StaticTokenProvider(token: token),
+        includedChannelIDs: includedChannelIDs
+    )
 }
 
 /// A 24h window ending now (matches how the orchestrator calls fetch).
@@ -42,7 +50,9 @@ private func dayWindow() -> (since: Date, until: Date) {
     #expect(item.source == .slack)
     #expect(item.type == .message)
     #expect(item.account == "Acme")
-    #expect(item.urgencyHints == [.mention])
+    // A mention is addressed to the reader, so it carries the "for-you" audience that
+    // routes it into the brief's "For you" Slack section.
+    #expect(item.urgencyHints == [.mention, .other("for-you")])
     #expect(item.people == ["dana"])
     #expect(item.body == "<@U01ALIM> can you review the connector PR before standup?")
     #expect(item.title.contains("dana"))
@@ -62,7 +72,7 @@ private func dayWindow() -> (since: Date, until: Date) {
 
     let item = try #require(items.first)
     #expect(item.type == .message)
-    #expect(item.urgencyHints == [.unread])
+    #expect(item.urgencyHints == [.unread, .other("for-you")])
     #expect(item.body == "Hey, are we still on for the 2pm sync?")
     // No resolved name on this raw envelope and no search `username`, so normalize uses a
     // neutral label rather than leaking the raw `U…` id. (fetch() resolves real names.)
@@ -78,8 +88,20 @@ private func dayWindow() -> (since: Date, until: Date) {
     let raw = RawItem(id: "dm:G05GROUP:1750120000.000100", connectorId: .slack, accountLabel: "Acme", json: envelope.json)
 
     let item = try #require(makeConnector(transport: MockHTTPTransport()).normalize([raw]).first)
-    #expect(item.urgencyHints == [.unread])
+    // Ambient rather than addressed to the reader → the "group" half of the brief.
+    #expect(item.urgencyHints == [.unread, .other("group")])
     #expect(item.title.contains("group DM"))
+}
+
+@Test func normalize_channelMessage_isGroupAudienceInNamedChannel() throws {
+    let history = try loader.json("conversations-history")
+    let message = try #require(history["messages"]?[0])
+    let envelope = SlackRawEnvelope(origin: .channel, channelName: "engineering", message: message)
+    let raw = RawItem(id: "channel:C01ENG:1750120000.000100", connectorId: .slack, accountLabel: "Acme", json: envelope.json)
+
+    let item = try #require(makeConnector(transport: MockHTTPTransport()).normalize([raw]).first)
+    #expect(item.urgencyHints == [.unread, .other("group")])
+    #expect(item.title.contains("#engineering"))
 }
 
 @Test func normalize_isDeterministic_sameRawIDSameUUID() throws {
@@ -131,7 +153,8 @@ private func dayWindow() -> (since: Date, until: Date) {
     #expect(dms.count == 2)
 
     let requests = await transport.recordedRequests
-    // auth.test, search.messages, conversations.list, (info + history) × 2 channels, users.info.
+    // auth.test, search.messages, conversations.list, (info + history) × 2 channels,
+    // users.info. No channels are picked, so the channel sweep costs nothing at all.
     #expect(requests.count == 8)
 
     // First request resolves the authed user via auth.test (with a Bearer token).
@@ -192,7 +215,8 @@ private func dayWindow() -> (since: Date, until: Date) {
     #expect(dms.allSatisfy { $0.id.hasPrefix("dm:G05GROUP:") })
 
     let requests = await transport.recordedRequests
-    // auth.test, list, info(read)→skip, info(unread)→history, then users.info × 2 senders = 7.
+    // auth.test, list, info(read)→skip, info(unread)→history, then users.info × 2
+    // senders = 7. No channels picked → no channel sweep.
     #expect(requests.count == 7)
     let urls = requests.compactMap { $0.url?.absoluteString }
     // Exactly one history call was made — the read channel never triggered one.
@@ -221,8 +245,158 @@ private func dayWindow() -> (since: Date, until: Date) {
     let items = connector.normalize(raw)
 
     #expect(items.allSatisfy { $0.source == .slack && $0.type == .message })
-    #expect(items.contains { $0.urgencyHints == [.mention] })
-    #expect(items.contains { $0.urgencyHints == [.unread] })
+    #expect(items.contains { $0.urgencyHints == [.mention, .other("for-you")] })
+    #expect(items.contains { $0.urgencyHints == [.unread, .other("for-you")] })
+}
+
+// MARK: - unread detection without an unread count
+
+@Test func fetch_groupDMWithoutUnreadCount_readsEverythingAfterLastRead() async throws {
+    let transport = MockHTTPTransport()
+    // Slack returns `unread_count_display` for 1:1 DMs but omits it entirely for group
+    // DMs — reading only that field treated every mpim as fully read, so group DMs could
+    // never reach a brief. The mpim fixture carries `last_read` and no count.
+    try await transport.enqueue(data: loader.data("auth-test-no-user"))
+    try await transport.enqueue(data: loader.data("conversations-list"))
+    try await transport.enqueue(data: loader.data("conversations-info-read")) // D03DIRECT: read → skipped
+    try await transport.enqueue(data: loader.data("conversations-info-mpim")) // G05GROUP: no count
+    try await transport.enqueue(data: loader.data("conversations-history"))
+    try await transport.enqueue(data: loader.data("users-info"))
+    try await transport.enqueue(data: loader.data("users-info"))
+
+    let window = dayWindow()
+    let raw = try await makeConnector(transport: transport)
+        .fetch(FetchRequest(accounts: [makeAccount()], since: window.since, until: window.until))
+
+    // The group DM contributes its messages instead of being silently skipped.
+    #expect(raw.filter { $0.id.hasPrefix("dm:G05GROUP:") }.count == 2)
+
+    // Its history was requested as "everything after last_read" — the only unread signal
+    // Slack gives for an mpim — rather than by a count it never returned.
+    let urls = await transport.recordedRequests.compactMap { $0.url?.absoluteString }
+    let historyURL = try #require(urls.first { $0.contains("conversations.history") })
+    #expect(historyURL.contains("channel=G05GROUP"))
+    #expect(historyURL.contains("oldest=1750119000.000050"))
+}
+
+// MARK: - channel sweep
+
+@Test func fetch_unreadChannels_areSweptAsGroupAudience() async throws {
+    let transport = MockHTTPTransport()
+    try await transport.enqueue(data: loader.data("auth-test-no-user"))
+    try await transport.enqueue(data: loader.data("conversations-list-empty")) // no DMs
+    // The channel listing has two member channels and one the user only lurks in.
+    try await transport.enqueue(data: loader.data("conversations-list-channels"))
+    try await transport.enqueue(data: loader.data("conversations-info-channel"))
+    try await transport.enqueue(data: loader.data("conversations-history"))
+    try await transport.enqueue(data: loader.data("conversations-info-channel"))
+    try await transport.enqueue(data: loader.data("conversations-history"))
+    try await transport.enqueue(data: loader.data("users-info"))
+    try await transport.enqueue(data: loader.data("users-info"))
+
+    let window = dayWindow()
+    // Both member channels are picked; the lurked-in one couldn't be picked anyway.
+    let connector = makeConnector(transport: transport, includedChannelIDs: ["C01ENG", "C02NOISE"])
+    let raw = try await connector
+        .fetch(FetchRequest(accounts: [makeAccount()], since: window.since, until: window.until))
+
+    // Both picked channels contribute; the non-member channel is never probed.
+    let channelItems = raw.filter { $0.id.hasPrefix("channel:") }
+    #expect(channelItems.count == 4)
+    let urls = await transport.recordedRequests.compactMap { $0.url?.absoluteString }
+    #expect(!urls.contains { $0.contains("channel=C03LURK") })
+
+    // Channel traffic is ambient, so it lands in the brief's "group" half.
+    let items = connector.normalize(channelItems)
+    #expect(items.allSatisfy { $0.urgencyHints.contains(.other("group")) })
+}
+
+@Test func fetch_unpickedChannel_isNeverProbed() async throws {
+    let transport = MockHTTPTransport()
+    try await transport.enqueue(data: loader.data("auth-test-no-user"))
+    try await transport.enqueue(data: loader.data("conversations-list-empty"))
+    try await transport.enqueue(data: loader.data("conversations-list-channels"))
+    // Only #engineering is probed — #random was never picked.
+    try await transport.enqueue(data: loader.data("conversations-info-channel"))
+    try await transport.enqueue(data: loader.data("conversations-history"))
+    try await transport.enqueue(data: loader.data("users-info"))
+    try await transport.enqueue(data: loader.data("users-info"))
+
+    let window = dayWindow()
+    let raw = try await makeConnector(transport: transport, includedChannelIDs: ["C01ENG"])
+        .fetch(FetchRequest(accounts: [makeAccount()], since: window.since, until: window.until))
+
+    #expect(raw.allSatisfy { !$0.id.hasPrefix("channel:C02NOISE:") })
+    // Unpicked means dropped before any per-channel call: no info, no history.
+    let urls = await transport.recordedRequests.compactMap { $0.url?.absoluteString }
+    #expect(!urls.contains { $0.contains("channel=C02NOISE") })
+}
+
+@Test func fetch_withoutGroupsReadScope_fallsBackToPublicChannels() async throws {
+    let transport = MockHTTPTransport()
+    try await transport.enqueue(data: loader.data("auth-test-no-user"))
+    try await transport.enqueue(data: loader.data("conversations-list-empty"))
+    // Listing private channels needs groups:read; without it Slack rejects the combined
+    // request outright, so the connector retries public-only rather than giving up.
+    await transport.enqueue(data: Data(#"{"ok":false,"error":"missing_scope","needed":"groups:read"}"#.utf8))
+    try await transport.enqueue(data: loader.data("conversations-list-empty"))
+
+    let window = dayWindow()
+    let raw = try await makeConnector(transport: transport, includedChannelIDs: ["C01ENG"])
+        .fetch(FetchRequest(accounts: [makeAccount()], since: window.since, until: window.until))
+
+    #expect(raw.isEmpty)
+    let urls = await transport.recordedRequests.compactMap { $0.url?.absoluteString }
+    let listings = urls.filter { $0.contains("conversations.list") }
+    #expect(listings.count == 3) // DMs, the rejected public+private attempt, then public-only
+    #expect(listings[1].contains("private_channel"))
+    #expect(!listings[2].contains("private_channel"))
+}
+
+@Test func fetch_noChannelsPicked_skipsTheChannelSweepEntirely() async throws {
+    let transport = MockHTTPTransport()
+    // Channel coverage is opt-in: with nothing picked the connector must not even list
+    // channels. That's the whole budget argument — a 66-channel workspace costs zero.
+    try await transport.enqueue(data: loader.data("auth-test-no-user"))
+    try await transport.enqueue(data: loader.data("conversations-list-empty"))
+
+    let window = dayWindow()
+    let raw = try await makeConnector(transport: transport)
+        .fetch(FetchRequest(accounts: [makeAccount()], since: window.since, until: window.until))
+
+    #expect(raw.isEmpty)
+    let urls = await transport.recordedRequests.compactMap { $0.url?.absoluteString }
+    // One listing only — the DM sweep's. No public/private channel listing at all.
+    #expect(urls.filter { $0.contains("conversations.list") }.count == 1)
+    #expect(!urls.contains { $0.contains("public_channel") })
+}
+
+@Test func fetch_selectionBeyondTheCap_isTrimmedToTheCap() async throws {
+    let transport = MockHTTPTransport()
+    try await transport.enqueue(data: loader.data("auth-test-no-user"))
+    try await transport.enqueue(data: loader.data("conversations-list-empty"))
+    try await transport.enqueue(data: loader.data("conversations-list-channels"))
+    // Only ONE channel's worth of info/history is stubbed: a stored selection larger
+    // than the cap must be trimmed rather than swept in full (a cap lowered in a later
+    // release can't be allowed to quietly overspend an old selection).
+    try await transport.enqueue(data: loader.data("conversations-info-channel"))
+    try await transport.enqueue(data: loader.data("conversations-history"))
+    try await transport.enqueue(data: loader.data("users-info"))
+    try await transport.enqueue(data: loader.data("users-info"))
+
+    let window = dayWindow()
+    let oversized = Set((0 ..< SlackConnector.maxSelectableChannels + 5).map { "C\($0)" })
+        .union(["C01ENG", "C02NOISE"])
+    let raw = try await makeConnector(transport: transport, includedChannelIDs: oversized)
+        .fetch(FetchRequest(accounts: [makeAccount()], since: window.since, until: window.until))
+
+    // The fixture only has two member channels, so the cap isn't hit here — what this
+    // pins is that a bloated stored selection doesn't fan out to a call per stored id.
+    let probed = await transport.recordedRequests
+        .compactMap { $0.url?.absoluteString }
+        .filter { $0.contains("conversations.info") }
+    #expect(probed.count <= SlackConnector.maxSelectableChannels)
+    #expect(!raw.isEmpty)
 }
 
 // MARK: - honest mention labeling

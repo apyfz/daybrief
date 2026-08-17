@@ -65,6 +65,31 @@ public struct SettingsStore: Sendable {
         try await setString(value.map(\.description), forKey: key.name)
     }
 
+    // MARK: - String-set access (JSON, order-independent)
+
+    /// Returns the stored set of strings for `key`, or `[]` when unset.
+    ///
+    /// Stored as a JSON array so values containing commas or spaces round-trip intact.
+    /// A corrupt payload reads as empty rather than throwing: these sets are user
+    /// preferences (which Slack channels to skip), and losing one should degrade to the
+    /// default rather than block a brief.
+    public func stringSet(forKey key: String) async throws -> Set<String> {
+        guard let raw = try await string(forKey: key), let data = raw.data(using: .utf8) else { return [] }
+        guard let values = try? JSONDecoder().decode([String].self, from: data) else { return [] }
+        return Set(values)
+    }
+
+    /// Sets (or, when empty, removes) the JSON-encoded string set for `key`.
+    /// Sorted on the way out so the stored text is stable across writes.
+    public func setStringSet(_ value: Set<String>, forKey key: String) async throws {
+        guard !value.isEmpty else {
+            try await setString(nil, forKey: key)
+            return
+        }
+        let data = try JSONEncoder().encode(value.sorted())
+        try await setString(String(decoding: data, as: UTF8.self), forKey: key)
+    }
+
     // MARK: - Date access (ISO-8601, deterministic)
 
     /// Returns the stored `Date` for `key`, parsed from ISO-8601, or `nil`.
@@ -96,6 +121,11 @@ public struct SettingsStore: Sendable {
     /// Whether launch-at-login is desired (the live source of truth is
     /// `SMAppService.status`; this is only a remembered user preference).
     public static let launchAtLogin = Key<Bool>("launch_at_login")
+    /// Raw key for the Slack channels the reader chose to cover, read/written via
+    /// ``stringSet(forKey:)`` / ``setStringSet(_:forKey:)``. An *allow* list, capped by
+    /// `SlackConnector.maxSelectableChannels`: absent means "no channel coverage yet",
+    /// which leaves DMs and @-mentions untouched.
+    public static let slackIncludedChannelsKey = "slack_included_channels"
     /// Raw key for the catch-up `lastBriefDate` (an ISO-8601 day); read/written
     /// via ``date(forKey:)`` / ``setDate(_:forKey:)``. Stamped only on a
     /// **successful** generation (see `RepositoryBriefSink`).
