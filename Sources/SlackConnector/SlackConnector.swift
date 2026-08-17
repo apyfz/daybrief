@@ -152,8 +152,16 @@ public struct SlackConnector: Connector {
             accountItems += try await fetchDMs(
                 token: token, account: account, identity: identity, unreadCutoff: unreadCutoff
             )
+            // A message that mentions the reader in a covered channel is reachable two
+            // ways — the mentions search and the channel sweep — and would otherwise
+            // enter the brief twice under different ids, once as "For you" and again as
+            // "Group". The mention wins; the channel sweep skips what it already has.
             accountItems += try await fetchChannels(
-                token: token, account: account, identity: identity, unreadCutoff: unreadCutoff
+                token: token,
+                account: account,
+                identity: identity,
+                unreadCutoff: unreadCutoff,
+                skipping: Self.messageKeys(ofMentionsIn: accountItems)
             )
             // Resolve sender user ids → display names so the brief shows names, not `U…` ids.
             accountItems = try await resolveSenderNames(in: accountItems, token: token)
@@ -296,7 +304,11 @@ public struct SlackConnector: Connector {
     /// public-only rather than returning nothing: a partial sweep beats a blank section,
     /// and the user can add the scope later without any other change.
     private func fetchChannels(
-        token: String, account: Account, identity: SelfIdentity?, unreadCutoff: Date
+        token: String,
+        account: Account,
+        identity: SelfIdentity?,
+        unreadCutoff: Date,
+        skipping alreadySeen: Set<String> = []
     ) async throws -> [RawItem] {
         // No selection → no channel coverage, and not a single request spent on it.
         guard !includedChannelIDs.isEmpty else { return [] }
@@ -332,7 +344,8 @@ public struct SlackConnector: Connector {
                 channelName: channel["name"]?.string ?? channelID,
                 account: account,
                 identity: identity,
-                unreadCutoff: unreadCutoff
+                unreadCutoff: unreadCutoff,
+                skipping: alreadySeen
             )
         }
         return items
@@ -437,10 +450,13 @@ public struct SlackConnector: Connector {
         channelName: String,
         account: Account,
         identity: SelfIdentity?,
-        unreadCutoff: Date
+        unreadCutoff: Date,
+        skipping alreadySeen: Set<String> = []
     ) -> [RawItem] {
         messages.compactMap { message in
             guard let ts = message["ts"]?.string else { return nil }
+            // Already surfaced by the mentions search — don't emit it a second time.
+            if alreadySeen.contains(messageKey(channelID: channelID, ts: ts)) { return nil }
             // Skip only true system events (joins/renames/pins). Content-bearing
             // subtypes — bot/app DMs, file shares, /me — are kept, so unread bot/file
             // messages surface instead of silently vanishing.
@@ -458,6 +474,26 @@ public struct SlackConnector: Connector {
                 json: envelope.json
             )
         }
+    }
+
+    /// A Slack message's identity across the two paths that can reach it: the channel
+    /// it lives in plus its timestamp. (`ts` is unique within a channel.)
+    private static func messageKey(channelID: String, ts: String) -> String {
+        "\(channelID):\(ts)"
+    }
+
+    /// The message keys of every mention already collected, so the channel sweep can
+    /// skip them. `search.messages` returns the containing channel on each match, which
+    /// is what makes the two paths comparable.
+    private static func messageKeys(ofMentionsIn items: [RawItem]) -> Set<String> {
+        Set(items.compactMap { item -> String? in
+            guard let envelope = SlackRawEnvelope(json: item.json),
+                  envelope.origin == .mention,
+                  let channelID = envelope.message["channel"]?["id"]?.string,
+                  let ts = envelope.message["ts"]?.string
+            else { return nil }
+            return messageKey(channelID: channelID, ts: ts)
+        })
     }
 
     /// Whether the reader picked this channel. Matched on id, and on name too so a

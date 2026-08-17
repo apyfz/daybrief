@@ -310,9 +310,12 @@ public struct Synthesizer: Sendable {
     /// The model groups by source in prose, and it *will* occasionally misfile — a Slack
     /// mention written into the Gmail section, sometimes duplicating an entry that is
     /// also filed correctly. Every entry cites the item ids it came from, so placement is
-    /// checkable rather than a matter of trust: an entry is kept only in the section
-    /// matching its items' own source (and, for Slack, their audience). A misfiled entry
-    /// moves to the section it belongs in, or is dropped when no such section exists.
+    /// checkable rather than a matter of trust.
+    ///
+    /// A misfiled entry is **relocated**, never left where it was: into the section for
+    /// its own source if the model wrote one, otherwise into a section synthesized for
+    /// it. Leaving it put would show Slack content under a Gmail heading; dropping it
+    /// would silently lose a real item the reader was meant to see.
     ///
     /// Entries citing no resolvable item are left where the model put them — unverifiable
     /// is not the same as wrong, and dropping them would lose real content on a model that
@@ -328,6 +331,11 @@ public struct Synthesizer: Sendable {
             return Bucket(source: first.source, audience: Self.audience(of: first))
         }
 
+        /// The item ids an entry cites, normalized for comparison.
+        func citedIDs(_ entry: SynthesizedBrief.Entry) -> Set<String> {
+            Set(entry.sourceItemIDs.map { $0.trimmingCharacters(in: .whitespaces).lowercased() })
+        }
+
         // The bucket each of the model's sections declares it holds.
         let declared = synthesized.sections.map { section -> Bucket? in
             let raw = section.source.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -337,21 +345,55 @@ public struct Synthesizer: Sendable {
             return Bucket(source: source, audience: source == .slack ? audience : "")
         }
 
-        return synthesized.sections.enumerated().compactMap { index, section -> BriefSection? in
-            let sectionBucket = declared[index]
-            let entries = section.entries.filter { entry in
-                guard let entryBucket = bucket(of: entry) else { return true } // unverifiable → leave be
-                if entryBucket == sectionBucket { return true }
-                // Misfiled: keep it here only when it has nowhere better to go, so the
-                // content survives even if the grouping was wrong.
-                return !declared.contains(entryBucket)
+        // Keep every entry that belongs where the model filed it; hold the rest aside.
+        var titles = synthesized.sections.map(\.title)
+        var buckets = declared
+        var entries: [[SynthesizedBrief.Entry]] = []
+        var strays: [SynthesizedBrief.Entry] = []
+        for (index, section) in synthesized.sections.enumerated() {
+            var kept: [SynthesizedBrief.Entry] = []
+            for entry in section.entries {
+                guard let entryBucket = bucket(of: entry) else { kept.append(entry); continue }
+                if entryBucket == declared[index] { kept.append(entry) } else { strays.append(entry) }
             }
-            guard !entries.isEmpty else { return nil }
+            entries.append(kept)
+        }
+
+        // Re-home each stray, creating the section its source needs when the model wrote none.
+        for stray in strays {
+            guard let strayBucket = bucket(of: stray) else { continue }
+            if let target = buckets.firstIndex(where: { $0 == strayBucket }) {
+                // The model often files the same item correctly *and* wrongly; don't
+                // let the relocation turn that into a duplicate.
+                let ids = citedIDs(stray)
+                let alreadyThere = entries[target].contains { !citedIDs($0).isDisjoint(with: ids) }
+                if !alreadyThere { entries[target].append(stray) }
+            } else {
+                titles.append(Self.sectionTitle(for: strayBucket))
+                buckets.append(strayBucket)
+                entries.append([stray])
+            }
+        }
+
+        return zip(zip(titles, buckets), entries).compactMap { pair, sectionEntries in
+            guard !sectionEntries.isEmpty else { return nil }
             return BriefSection(
-                title: section.title,
-                source: sectionBucket?.source,
-                entries: entries.map(Self.mapEntry)
+                title: pair.0,
+                source: pair.1?.source,
+                entries: sectionEntries.map(Self.mapEntry)
             )
+        }
+    }
+
+    /// The heading a synthesized section gets when the model didn't write one for a
+    /// source that turned out to have content.
+    static func sectionTitle(for bucket: Bucket) -> String {
+        switch bucket.source {
+        case .gmail: return "Gmail"
+        case .gcal: return "Calendar"
+        case .notion: return "Notion"
+        case .slack: return bucket.audience == "for-you" ? "Slack — For you" : "Slack — Group"
+        default: return bucket.source.rawValue.capitalized
         }
     }
 

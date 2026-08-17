@@ -355,11 +355,11 @@ struct SynthesizerTests {
         #expect(slack.entries.map(\.headline) == ["check this error"])
     }
 
-    @Test("a misfiled entry is kept when no section of its own source exists")
-    func misfiledEntryWithNowhereToGoIsKept() throws {
+    @Test("a misfiled entry gets a section of its own source when the model wrote none")
+    func misfiledEntryWithNowhereToGoIsRelocated() throws {
         let (mention, mail) = Self.placementItems()
-        // Only a Gmail section this time: dropping the Slack entry would lose the
-        // content outright, so it stays where it is.
+        // Only a Gmail section this time. Leaving the Slack mention under Gmail would
+        // label it as mail; dropping it would lose a real item. It gets its own section.
         let synthesized = SynthesizedBrief(
             masthead: "The Wednesday Brief",
             lede: "Quiet.",
@@ -384,8 +384,12 @@ struct SynthesizerTests {
             items: [mention, mail]
         )
 
-        #expect(brief.sections.count == 1)
-        #expect(brief.sections[0].entries.count == 2)
+        #expect(brief.sections.count == 2)
+        let gmail = try #require(brief.sections.first { $0.source == .gmail })
+        #expect(gmail.entries.map(\.headline) == ["iCloud+ price rises"])
+        let slack = try #require(brief.sections.first { $0.source == .slack })
+        #expect(slack.title == "Slack — For you")
+        #expect(slack.entries.map(\.headline) == ["crispyux needs you to check an error"])
     }
 
     @Test("an entry citing no items is left where the model filed it")

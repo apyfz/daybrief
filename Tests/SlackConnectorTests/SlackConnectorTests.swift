@@ -399,6 +399,32 @@ private func dayWindow() -> (since: Date, until: Date) {
     #expect(!raw.isEmpty)
 }
 
+@Test func fetch_mentionInACoveredChannel_isNotEmittedTwice() async throws {
+    let transport = MockHTTPTransport()
+    // The mentions search and the channel sweep can both reach the same message. The
+    // search fixture's match lives in C01ENG at ts 1750118400.001500; the channel sweep
+    // covers C01ENG too, so without de-duplication that message would enter the brief
+    // twice — once as "For you" and again as "Group".
+    try await transport.enqueue(data: loader.data("auth-test"))
+    try await transport.enqueue(data: loader.data("search-messages"))
+    try await transport.enqueue(data: loader.data("conversations-list-empty")) // no DMs
+    try await transport.enqueue(data: loader.data("conversations-list-channels"))
+    try await transport.enqueue(data: loader.data("conversations-info-channel"))
+    try await transport.enqueue(data: loader.data("search-messages-as-history"))
+    try await transport.enqueue(data: loader.data("users-info"))
+    try await transport.enqueue(data: loader.data("users-info"))
+
+    let window = dayWindow()
+    let raw = try await makeConnector(transport: transport, includedChannelIDs: ["C01ENG"])
+        .fetch(FetchRequest(accounts: [makeAccount()], since: window.since, until: window.until))
+
+    // The mention is kept; the channel sweep's copy of the very same message is not.
+    let mentions = raw.filter { $0.id.hasPrefix("mention:1750118400.001500") }
+    let channelCopies = raw.filter { $0.id == "channel:C01ENG:1750118400.001500" }
+    #expect(mentions.count == 1)
+    #expect(channelCopies.isEmpty)
+}
+
 // MARK: - honest mention labeling
 
 @Test func fetch_searchMatches_onlyTrueMentionsLabeledMention() async throws {
