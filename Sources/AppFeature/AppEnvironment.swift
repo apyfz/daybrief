@@ -117,11 +117,16 @@ public struct AppEnvironment: Sendable {
     /// Builds a connector registry with every connector registered against
     /// `tokenProvider`. Enabled flags are applied by the caller from the persisted
     /// connections.
-    public func makeRegistry() -> ConnectorRegistry {
-        ConnectorRegistry([
+    ///
+    /// Reads the Slack channel selection on the way through, so picking a channel in
+    /// Settings takes effect on the next brief without any registry invalidation.
+    public func makeRegistry() async -> ConnectorRegistry {
+        let selectedSlackChannels =
+            (try? await settings.stringSet(forKey: SettingsStore.slackIncludedChannelsKey)) ?? []
+        return ConnectorRegistry([
             GoogleCalendarConnector(tokenProvider: tokenProvider),
             GmailConnector(tokenProvider: tokenProvider),
-            SlackConnector(tokenProvider: tokenProvider),
+            SlackConnector(tokenProvider: tokenProvider, includedChannelIDs: selectedSlackChannels),
             NotionConnector(tokenProvider: tokenProvider),
         ])
     }

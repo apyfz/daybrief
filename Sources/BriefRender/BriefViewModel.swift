@@ -19,6 +19,10 @@ public struct BriefViewModel: Sendable, Equatable, Hashable, Identifiable {
     public let generatedAtAbsolute: String
     /// A display label for the active space filter (e.g. "Work"), or `nil` for all spaces.
     public let spaceFilterDisplay: String?
+    /// The holistic "Daybrief" overview shown in the lead summary card — projected from
+    /// ``DaybriefCore/Brief/summary`` (falling back to the lede on older briefs). Empty
+    /// when there is nothing to summarize.
+    public let summary: String
     /// The single most important item of the day, rendered large as the lead story —
     /// projected from ``DaybriefCore/Brief/lead`` and kept separate from ``sections``
     /// so the edition leads with a real headline. `nil` on a quiet day with nothing to
@@ -55,6 +59,7 @@ public struct BriefViewModel: Sendable, Equatable, Hashable, Identifiable {
         generatedAtRelative: String,
         generatedAtAbsolute: String,
         spaceFilterDisplay: String?,
+        summary: String = "",
         lead: Entry? = nil,
         leadCTALabel: String? = nil,
         sections: [Section],
@@ -66,6 +71,7 @@ public struct BriefViewModel: Sendable, Equatable, Hashable, Identifiable {
         self.generatedAtRelative = generatedAtRelative
         self.generatedAtAbsolute = generatedAtAbsolute
         self.spaceFilterDisplay = spaceFilterDisplay
+        self.summary = summary
         self.lead = lead
         self.leadCTALabel = leadCTALabel
         self.sections = sections
@@ -74,19 +80,23 @@ public struct BriefViewModel: Sendable, Equatable, Hashable, Identifiable {
         self.accentHex = accentHex
     }
 
-    /// A titled group of entries, ready to render.
+    /// A titled group of entries, ready to render. In the source-grouped brief, each is
+    /// one connector's updates and ``source`` carries that connector for the dropdown.
     public struct Section: Sendable, Equatable, Hashable, Identifiable {
         /// The section's id (from ``BriefSection``).
         public let id: UUID
-        /// The section heading.
+        /// The section heading (the source's display name, e.g. "Gmail").
         public let title: String
+        /// The connector this section groups, when grouped by source; `nil` otherwise.
+        public let source: ConnectorID?
         /// The entries in priority-then-original display order.
         public let entries: [Entry]
 
         /// Creates a section view model.
-        public init(id: UUID, title: String, entries: [Entry]) {
+        public init(id: UUID, title: String, source: ConnectorID? = nil, entries: [Entry]) {
             self.id = id
             self.title = title
+            self.source = source
             self.entries = entries
         }
     }

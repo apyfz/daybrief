@@ -112,8 +112,8 @@ struct SynthesizerTests {
     }
     """
 
-    @Test("maps mood, the lead story, and a tone-matched hero")
-    func mapsMoodLeadAndTonedHero() async throws {
+    @Test("maps mood and a tone-matched hero, and retires the lead story")
+    func mapsMoodAndTonedHero() async throws {
         let adapter = StubModelAdapter(structuredResponses: [Self.cannedWithMoodAndLead])
 
         let brief = try await makeSynthesizer().synthesize(
@@ -126,15 +126,9 @@ struct SynthesizerTests {
         // Mood maps onto the taxonomy.
         #expect(brief.mood == .eventful)
 
-        // The lead story is its own entry, separate from the sections.
-        let lead = try #require(brief.lead)
-        #expect(lead.headline == "Ship the Cashfeed launch")
-        #expect(lead.priority == 0)
-        #expect(lead.ctaLabel == "Let's ship it")
-        #expect(lead.url == URL(string: "https://example.com/launch"))
-        // The lead is NOT duplicated into the sections.
-        let sectionHeadlines = brief.sections.flatMap { $0.entries.map(\.headline) }
-        #expect(!sectionHeadlines.contains(lead.headline))
+        // The lead story has been replaced by the Daybrief summary card, so even a model
+        // that still emits `lead` (an older prompt, a stale fixture) contributes none.
+        #expect(brief.lead == nil)
         #expect(brief.sections.first?.title == "On the calendar")
 
         // The hero is the tone-matched pick for the mood (not the plain by-date pick).
@@ -299,23 +293,153 @@ struct SynthesizerTests {
         #expect(entry.ctaLabel == nil)
     }
 
+    /// A Slack mention and a Gmail item, as the connectors would normalize them.
+    private static func placementItems() -> (mention: BriefItem, mail: BriefItem) {
+        let mention = BriefItem(
+            source: .slack,
+            account: "Crispy Studio",
+            space: "work",
+            type: .message,
+            title: "crispyux mentioned you in #tasks",
+            timestamp: Self.wednesday(),
+            urgencyHints: [.mention, .other("for-you")]
+        )
+        let mail = BriefItem(
+            source: .gmail,
+            account: "work",
+            space: "work",
+            type: .email,
+            title: "iCloud+ price rises in September",
+            timestamp: Self.wednesday(),
+            urgencyHints: [.unread]
+        )
+        return (mention, mail)
+    }
+
+    @Test("a Slack entry misfiled into the Gmail section is moved back to Slack")
+    func misfiledEntryIsRemovedFromTheWrongSection() throws {
+        let (mention, mail) = Self.placementItems()
+        // Exactly the failure seen in a real brief: the model filed the Slack mention
+        // correctly under Slack AND duplicated it into Gmail.
+        let synthesized = SynthesizedBrief(
+            masthead: "The Wednesday Brief",
+            lede: "Quiet.",
+            summary: "A calm day.",
+            sections: [
+                .init(title: "Gmail", source: "gmail", audience: "", entries: [
+                    .init(headline: "crispyux needs you to check an error in #tasks",
+                          sourceItemIDs: [mention.id.uuidString]),
+                    .init(headline: "iCloud+ price rises", sourceItemIDs: [mail.id.uuidString]),
+                ]),
+                .init(title: "Slack — For you", source: "slack", audience: "for-you", entries: [
+                    .init(headline: "check this error", sourceItemIDs: [mention.id.uuidString]),
+                ]),
+            ]
+        )
+
+        let brief = makeSynthesizer().mapToBrief(
+            synthesized,
+            generatedAt: Self.wednesday(),
+            weekday: "Wednesday",
+            spaceFilter: nil,
+            connectorErrors: [],
+            signalsRead: 2,
+            sources: [.gmail, .slack],
+            items: [mention, mail]
+        )
+
+        // Gmail keeps only the mail; the mention survives in its own section.
+        let gmail = try #require(brief.sections.first { $0.source == .gmail })
+        #expect(gmail.entries.map(\.headline) == ["iCloud+ price rises"])
+        let slack = try #require(brief.sections.first { $0.source == .slack })
+        #expect(slack.entries.map(\.headline) == ["check this error"])
+    }
+
+    @Test("a misfiled entry gets a section of its own source when the model wrote none")
+    func misfiledEntryWithNowhereToGoIsRelocated() throws {
+        let (mention, mail) = Self.placementItems()
+        // Only a Gmail section this time. Leaving the Slack mention under Gmail would
+        // label it as mail; dropping it would lose a real item. It gets its own section.
+        let synthesized = SynthesizedBrief(
+            masthead: "The Wednesday Brief",
+            lede: "Quiet.",
+            summary: "A calm day.",
+            sections: [
+                .init(title: "Gmail", source: "gmail", audience: "", entries: [
+                    .init(headline: "crispyux needs you to check an error",
+                          sourceItemIDs: [mention.id.uuidString]),
+                    .init(headline: "iCloud+ price rises", sourceItemIDs: [mail.id.uuidString]),
+                ]),
+            ]
+        )
+
+        let brief = makeSynthesizer().mapToBrief(
+            synthesized,
+            generatedAt: Self.wednesday(),
+            weekday: "Wednesday",
+            spaceFilter: nil,
+            connectorErrors: [],
+            signalsRead: 2,
+            sources: [.gmail, .slack],
+            items: [mention, mail]
+        )
+
+        #expect(brief.sections.count == 2)
+        let gmail = try #require(brief.sections.first { $0.source == .gmail })
+        #expect(gmail.entries.map(\.headline) == ["iCloud+ price rises"])
+        let slack = try #require(brief.sections.first { $0.source == .slack })
+        #expect(slack.title == "Slack — For you")
+        #expect(slack.entries.map(\.headline) == ["crispyux needs you to check an error"])
+    }
+
+    @Test("an entry citing no items is left where the model filed it")
+    func unverifiableEntryIsLeftAlone() throws {
+        let (_, mail) = Self.placementItems()
+        let synthesized = SynthesizedBrief(
+            masthead: "The Wednesday Brief",
+            lede: "Quiet.",
+            summary: "A calm day.",
+            sections: [
+                .init(title: "Gmail", source: "gmail", audience: "", entries: [
+                    .init(headline: "Something uncited", sourceItemIDs: []),
+                ]),
+            ]
+        )
+
+        let brief = makeSynthesizer().mapToBrief(
+            synthesized,
+            generatedAt: Self.wednesday(),
+            weekday: "Wednesday",
+            spaceFilter: nil,
+            connectorErrors: [],
+            signalsRead: 1,
+            sources: [.gmail],
+            items: [mail]
+        )
+
+        #expect(brief.sections.first?.entries.map(\.headline) == ["Something uncited"])
+    }
+
     @Test("the strict schema sets additionalProperties:false and requires every property")
     func schemaIsStrict() throws {
         let schema = Synthesizer.schema.schema
         #expect(schema["additionalProperties"]?.bool == false)
         let required = try #require(schema["required"]?.array)
-        #expect(Set(required.compactMap(\.string)) == ["masthead", "lede", "mood", "lead", "sections"])
+        #expect(Set(required.compactMap(\.string)) == ["masthead", "lede", "summary", "mood", "sections"])
 
         // mood is an enum string constrained to the BriefMood raw values.
         let moodEnum = try #require(schema["properties"]?["mood"]?["enum"]?.array)
         #expect(Set(moodEnum.compactMap(\.string)) == Set(BriefMood.allCases.map(\.rawValue)))
 
-        // The lead is a nullable entry object requiring the same five properties.
-        let leadSchema = try #require(schema["properties"]?["lead"])
-        let leadType = try #require(leadSchema["type"]?.array)
-        #expect(Set(leadType.compactMap(\.string)) == ["object", "null"])
-        let leadRequired = try #require(leadSchema["required"]?.array)
-        #expect(Set(leadRequired.compactMap(\.string)) == ["headline", "detail", "url", "priority", "ctaLabel"])
+        // The lead story is gone: the Daybrief summary card replaced it.
+        #expect(schema["properties"]?["lead"] == nil)
+
+        // A section declares its source and, for Slack, which audience half it covers.
+        let sectionSchema = try #require(schema["properties"]?["sections"]?["items"])
+        let sectionRequired = try #require(sectionSchema["required"]?.array)
+        #expect(Set(sectionRequired.compactMap(\.string)) == ["title", "source", "audience", "entries"])
+        let audienceEnum = try #require(sectionSchema["properties"]?["audience"]?["enum"]?.array)
+        #expect(Set(audienceEnum.compactMap(\.string)) == ["for-you", "group", ""])
 
         // The entry object must require all five properties (optionals as nullable).
         let entrySchema = try #require(
@@ -323,7 +447,10 @@ struct SynthesizerTests {
         )
         #expect(entrySchema["additionalProperties"]?.bool == false)
         let entryRequired = try #require(entrySchema["required"]?.array)
-        #expect(Set(entryRequired.compactMap(\.string)) == ["headline", "detail", "url", "priority", "ctaLabel"])
+        // sourceItemIDs is required too: it's the provenance that makes an entry's
+        // section placement checkable rather than a matter of trusting the model.
+        #expect(Set(entryRequired.compactMap(\.string))
+            == ["headline", "detail", "url", "priority", "ctaLabel", "sourceItemIDs"])
 
         // detail is a nullable string union.
         let detailType = try #require(entrySchema["properties"]?["detail"]?["type"]?.array)

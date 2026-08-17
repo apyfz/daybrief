@@ -15,7 +15,7 @@ public struct OnboardingView: View {
 
     /// The ordered onboarding steps.
     private enum Step: Int, CaseIterable, Identifiable {
-        case apiKey, connect, spaces, briefTime
+        case apiKey, connect, briefTime
 
         var id: Int {
             rawValue
@@ -25,7 +25,6 @@ public struct OnboardingView: View {
             switch self {
             case .apiKey: "Connect an AI model"
             case .connect: "Connect your tools"
-            case .spaces: "Sort into Spaces"
             case .briefTime: "When should it land?"
             }
         }
@@ -36,8 +35,6 @@ public struct OnboardingView: View {
                 "Daybrief sends only what you ask it to, to the model you choose. Start with one key."
             case .connect:
                 "Each is optional. Connect what you want in your morning brief — you can add more later."
-            case .spaces:
-                "Keep work and personal apart so a work brief never blends in your personal mail."
             case .briefTime:
                 "Your brief is written each morning at this time. It also catches up after sleep."
             }
@@ -103,7 +100,6 @@ public struct OnboardingView: View {
         switch step {
         case .apiKey: APIKeyStep(model: model)
         case .connect: ConnectToolsStep(model: model)
-        case .spaces: AssignSpacesStep(model: model)
         case .briefTime: BriefTimeStep(model: model)
         }
     }

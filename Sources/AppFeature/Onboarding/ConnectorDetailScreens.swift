@@ -13,14 +13,9 @@ enum OnboardingConnector: Identifiable, CaseIterable {
         self
     }
 
-    /// The SF Symbol shown on the hub row and the screen header.
-    var symbol: String {
-        switch self {
-        case .calendar: "calendar"
-        case .gmail: "envelope"
-        case .slack: "number"
-        case .notion: "checklist"
-        }
+    /// The connector glyph shown on the hub row and the screen header.
+    var icon: Image {
+        DaybriefIcon.connector(connectorID)
     }
 
     /// The connector's display name.
@@ -65,8 +60,8 @@ private struct ConnectorScreenHeader: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 14) {
-                Image(systemName: connector.symbol)
-                    .font(.system(size: 22, weight: .medium))
+                connector.icon
+                    .daybriefIcon(size: 24)
                     .foregroundStyle(DaybriefTheme.ink)
                     .frame(width: 52, height: 52)
                     .background(DaybriefTheme.accent.opacity(0.35), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
@@ -452,7 +447,10 @@ struct GoogleConnectorScreen: View {
             clientSecret: secret.isEmpty ? nil : secret,
             space: defaultSpaceKey(model)
         )
-        if isConnected { onClose() }
+        // Deliberately NOT closing on success: Part 7 (picking channels) only becomes
+        // available once the token is in, and it's the step that decides whether the
+        // Group half of the brief has anything in it.
+        if isConnected { await model.loadSlackChannels() }
     }
 
     private func connectReusing() async {
@@ -494,7 +492,11 @@ struct SlackConnectorScreen: View {
     ]
 
     private static let part3Steps: [DBStep] = [
-        DBStep("In the left menu open “OAuth & Permissions.” Scroll to “Scopes,” and under “User Token Scopes” (NOT “Bot Token Scopes”) add all six: search:read, im:read, im:history, mpim:read, mpim:history, users:read."),
+        DBStep("In the left menu open “OAuth & Permissions.” Scroll to “Scopes,” and under “User Token Scopes” (NOT “Bot Token Scopes”) add all ten: search:read, users:read, im:read, im:history, mpim:read, mpim:history, channels:read, channels:history, groups:read, groups:history."),
+        DBStep(
+            "Watch the column: it's easy to add these to “Bot Token Scopes” by mistake, and a bot token can't read your unread or search your mentions.",
+            emphasized: true
+        ),
     ]
 
     private static let part4Steps: [DBStep] = [
@@ -520,6 +522,10 @@ struct SlackConnectorScreen: View {
                 DBScopeRow(scope: "im:history", why: "Read your direct-message history from the last day.")
                 DBScopeRow(scope: "mpim:read", why: "List your group direct-message conversations.")
                 DBScopeRow(scope: "mpim:history", why: "Read your group direct-message history from the last day.")
+                DBScopeRow(scope: "channels:read", why: "List the public channels you're in, so you can pick which ones to cover.")
+                DBScopeRow(scope: "channels:history", why: "Read unread messages in the public channels you picked.")
+                DBScopeRow(scope: "groups:read", why: "List the private channels you're in.")
+                DBScopeRow(scope: "groups:history", why: "Read unread messages in the private channels you picked.")
                 DBScopeRow(scope: "users:read", why: "Turn user IDs into names so the brief reads naturally.")
             }
 
@@ -549,6 +555,17 @@ struct SlackConnectorScreen: View {
                 }
             }
 
+            if isConnected {
+                DBDetailSection(title: "Part 7 · Pick your channels") {
+                    SlackChannelPicker(
+                        model: model,
+                        caption: "Your direct messages and @-mentions are covered automatically. "
+                            + "Channels are your pick — choose the ones you'd actually read, and "
+                            + "leave the rest out so the brief stays a digest."
+                    )
+                }
+            }
+
             ExpectScreenCallout(
                 title: "Slack will ask you to “Allow” — that's normal",
                 message: "When you click Install to Workspace, Slack shows a permissions screen listing what Daybrief can see (your messages, mentions, names). That's the expected, sanctioned flow — just click Allow. It's your own app in your own workspace; nothing routes through anyone else."
@@ -564,6 +581,9 @@ struct SlackConnectorScreen: View {
                         .foregroundStyle(DaybriefTheme.ink)
                 }
                 Spacer()
+                if isConnected {
+                    DBSecondaryButton("Done", systemImage: "checkmark") { onClose() }
+                }
                 DBPrimaryButton(
                     title: isConnecting ? "Connecting…" : (isConnected ? "Reconnect" : "Connect Slack"),
                     isBusy: isConnecting

@@ -1,12 +1,13 @@
 import DaybriefCore
 import LLMKit
 import Pipeline
+import SlackConnector
 import SwiftUI
 
 /// The settings screen shown once setup is complete: review/retune everything from
 /// onboarding without re-running the flow.
 ///
-/// Sections: connected tools (with a per-account Space picker via `model.setSpace`),
+/// Sections: connected tools, the Slack channel selection,
 /// the provider + model picker, the daily brief time, the launch-at-login toggle
 /// (driven by `SMAppService` live status through `model.setLaunchAtLogin`), and a
 /// button to open the user-editable prompt/template files in Finder.
@@ -27,8 +28,10 @@ public struct SettingsView: View {
                     ConnectionsSection(model: model)
                 }
 
-                SettingsSection(title: "Spaces", systemImage: "square.grid.2x2") {
-                    SpacesSection(model: model)
+                if model.connections.contains(where: { $0.connectorId == .slack && !$0.accounts.isEmpty }) {
+                    SettingsSection(title: "Slack channels", icon: DaybriefIcon.slack) {
+                        SlackChannelsSection(model: model)
+                    }
                 }
 
                 SettingsSection(title: "AI model", systemImage: "sparkles") {
@@ -67,14 +70,26 @@ public struct SettingsView: View {
 /// A titled settings group with a leading icon and a soft card body.
 private struct SettingsSection<Content: View>: View {
     let title: String
-    let systemImage: String
+    /// The section glyph. An `Image` rather than an SF Symbol name so a section about
+    /// one service can carry that service's own mark (see the Slack channels section).
+    let icon: Image
     @ViewBuilder let content: Content
+
+    init(title: String, systemImage: String, @ViewBuilder content: () -> Content) {
+        self.init(title: title, icon: Image(systemName: systemImage), content: content)
+    }
+
+    init(title: String, icon: Image, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.icon = icon
+        self.content = content()
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 13, weight: .semibold))
+                icon
+                    .daybriefIcon(size: 13)
                     .foregroundStyle(DaybriefTheme.accent)
                 Text(title)
                     .font(.system(size: 13, weight: .semibold))
@@ -126,8 +141,8 @@ private struct ConnectionsSection: View {
 
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
-                Image(systemName: connector.symbol)
-                    .font(.system(size: 14, weight: .medium))
+                connector.icon
+                    .daybriefIcon(size: 15)
                     .foregroundStyle(DaybriefTheme.ink)
                     .frame(width: 28, height: 28)
                     .background(DaybriefTheme.accent.opacity(0.3), in: RoundedRectangle(cornerRadius: 7))
@@ -161,27 +176,19 @@ private struct ConnectionsSection: View {
     }
 }
 
-/// One account row: icon, label, connection name, its Space picker, and a
-/// destructive Remove button (confirmation-gated).
+/// One account row: icon, label, connection name, and a destructive Remove button
+/// (confirmation-gated).
 private struct ConnectionRow: View {
     @Bindable var model: AppModel
     let connection: Connection
     let account: Account
 
-    @State private var selection: String
     @State private var confirmingRemove = false
-
-    init(model: AppModel, connection: Connection, account: Account) {
-        self.model = model
-        self.connection = connection
-        self.account = account
-        _selection = State(initialValue: account.spaceKey)
-    }
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: symbol)
-                .font(.system(size: 14, weight: .medium))
+            DaybriefIcon.connector(connection.connectorId)
+                .daybriefIcon(size: 15)
                 .foregroundStyle(DaybriefTheme.ink)
                 .frame(width: 28, height: 28)
                 .background(DaybriefTheme.accent.opacity(0.3), in: RoundedRectangle(cornerRadius: 7))
@@ -195,17 +202,6 @@ private struct ConnectionRow: View {
                     .foregroundStyle(DaybriefTheme.inkSecondary)
             }
             Spacer(minLength: 12)
-
-            Picker("Space", selection: $selection) {
-                ForEach(model.spaces) { space in
-                    Text(space.displayName).tag(space.key)
-                }
-            }
-            .labelsHidden()
-            .frame(maxWidth: 140)
-            .onChange(of: selection) { _, newValue in
-                Task { await model.setSpace(accountID: account.id, to: newValue) }
-            }
 
             Button {
                 confirmingRemove = true
@@ -231,110 +227,20 @@ private struct ConnectionRow: View {
         }
     }
 
-    private var symbol: String {
-        switch connection.connectorId {
-        case .gcal: "calendar"
-        case .gmail: "envelope"
-        case .slack: "number"
-        default: "app.connected.to.app.below.fill"
-        }
-    }
 }
 
-// MARK: - Spaces
+// MARK: - Slack channels
 
-/// Lists each space with a Remove (trash) button — disabled when only one space
-/// remains — plus an "Add space" row that creates a new space from a typed name.
-/// Removing a space re-files its accounts under another space (handled in the model).
-private struct SpacesSection: View {
+/// The Slack channel selection, rendered by the shared ``SlackChannelPicker`` so
+/// Settings and onboarding always describe the same capped, opt-in rule.
+private struct SlackChannelsSection: View {
     @Bindable var model: AppModel
 
-    @State private var newSpaceName = ""
-    @State private var confirmingRemoval: Space?
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            ForEach(model.spaces) { space in
-                if space != model.spaces.first {
-                    Divider().overlay(DaybriefTheme.ink.opacity(0.06))
-                }
-                spaceRow(space)
-            }
-
-            Divider().overlay(DaybriefTheme.ink.opacity(0.06))
-            addSpaceRow
-        }
-        .confirmationDialog(
-            "Remove “\(confirmingRemoval?.displayName ?? "")”?",
-            isPresented: removalDialogBinding,
-            titleVisibility: .visible
-        ) {
-            Button("Remove", role: .destructive) {
-                if let space = confirmingRemoval {
-                    Task { await model.removeSpace(key: space.key) }
-                }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Accounts in this space move to another space. This can't be undone.")
-        }
-    }
-
-    private func spaceRow(_ space: Space) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: "square.grid.2x2")
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(DaybriefTheme.ink)
-                .frame(width: 28, height: 28)
-                .background(DaybriefTheme.accent.opacity(0.3), in: RoundedRectangle(cornerRadius: 7))
-
-            Text(space.displayName)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(DaybriefTheme.ink)
-
-            Spacer(minLength: 12)
-
-            Button {
-                confirmingRemoval = space
-            } label: {
-                Image(systemName: "trash")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.red.opacity(model.spaces.count > 1 ? 0.85 : 0.3))
-            }
-            .buttonStyle(.plain)
-            .disabled(model.spaces.count <= 1)
-            .help(model.spaces.count > 1 ? "Remove this space" : "Keep at least one space")
-        }
-    }
-
-    private var addSpaceRow: some View {
-        HStack(spacing: 12) {
-            TextField("New space name", text: $newSpaceName)
-                .textFieldStyle(.roundedBorder)
-                .frame(maxWidth: 240)
-                .onSubmit { addSpace() }
-
-            DBSecondaryButton("Add space", systemImage: "plus") {
-                addSpace()
-            }
-            .disabled(newSpaceName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-
-            Spacer(minLength: 0)
-        }
-    }
-
-    private func addSpace() {
-        let name = newSpaceName
-        newSpaceName = ""
-        Task { await model.addSpace(displayName: name) }
-    }
-
-    /// Bridges the per-space `confirmingRemoval` selection to a `Bool` the
-    /// `confirmationDialog(isPresented:)` overload needs.
-    private var removalDialogBinding: Binding<Bool> {
-        Binding(
-            get: { confirmingRemoval != nil },
-            set: { presented in if !presented { confirmingRemoval = nil } }
+        SlackChannelPicker(
+            model: model,
+            caption: "Pick the channels worth reading in your brief. Direct messages and "
+                + "@-mentions are always included."
         )
     }
 }

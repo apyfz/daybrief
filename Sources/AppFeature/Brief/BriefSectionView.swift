@@ -8,17 +8,14 @@ import SwiftUI
 ///
 /// `ctaLabels` carries the per-entry CTA text (from the original ``Brief``,
 /// which the projected view model drops) keyed by entry id, so the badge prints
-/// the LLM's chosen label and falls back to "Let's do it" when absent.
+/// the LLM's chosen label — and is omitted entirely when it wrote none.
 struct BriefSectionView: View {
     /// The presentation-ready section from ``BriefRenderer``.
     let section: BriefViewModel.Section
-    /// Per-entry CTA labels keyed by entry id; missing keys fall back to the default.
+    /// Per-entry CTA labels keyed by entry id. A missing key means no action badge.
     let ctaLabels: [UUID: String]
     /// The edition's accent, sampled from its hero painting; defaults to the golden accent.
     var accent: Color = DaybriefTheme.accent
-    /// Whether the CTA badges may use the macOS 26 Liquid Glass rendering. The offscreen
-    /// snapshot tool sets this `false` (`ImageRenderer` can't rasterize Liquid Glass).
-    var usesGlassCTA: Bool = true
     /// Forwarded to each entry: called with the entry's id when the user dismisses it.
     /// Defaults to a no-op so snapshots and previews need not supply one.
     var onDismiss: (UUID) -> Void = { _ in }
@@ -41,9 +38,8 @@ struct BriefSectionView: View {
                 }
                 BriefEntryView(
                     entry: entry,
-                    ctaLabel: ctaLabels[entry.id] ?? "Let's do it",
+                    ctaLabel: ctaLabels[entry.id],
                     accent: accent,
-                    usesGlassCTA: usesGlassCTA,
                     onDismiss: onDismiss
                 )
             }

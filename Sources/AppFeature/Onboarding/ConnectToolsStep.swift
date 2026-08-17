@@ -21,7 +21,7 @@ struct ConnectToolsStep: View {
         VStack(alignment: .leading, spacing: 14) {
             ForEach(OnboardingConnector.allCases) { connector in
                 DBConnectorRow(
-                    symbol: connector.symbol,
+                    icon: connector.icon,
                     name: connector.name,
                     surfaces: connector.surfaces,
                     isConnected: isConnected(connector),
@@ -78,8 +78,14 @@ struct ConnectToolsStep: View {
     }
 }
 
-/// The space key new connections default to during onboarding (first space, else
-/// `"work"`). The user re-assigns per account in the next step.
+/// The space key new connections are filed under (the first seeded space, else
+/// `"work"`).
+///
+/// Spaces are a data-model concept only — there is no UI for them. Every account lands
+/// in the default space, and `BriefGenerator` is never given a space filter, so the tag
+/// currently has no effect on a brief. It stays because per-Space briefs (a separate
+/// work brief on its own schedule) are the obvious next use of it, and dropping the
+/// column would mean a migration to add it back.
 @MainActor
 func defaultSpaceKey(_ model: AppModel) -> String {
     model.spaces.first?.key ?? "work"

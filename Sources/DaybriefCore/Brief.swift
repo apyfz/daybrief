@@ -16,6 +16,10 @@ public struct Brief: Sendable, Codable, Equatable, Hashable, Identifiable {
     public let masthead: String
     /// One or two sentences of editorial prose summarizing the day (the italic lede).
     public let lede: String
+    /// The holistic "Daybrief" overview — a short paragraph summarizing everything
+    /// collected today across all sources, shown in the lead "Daybrief" card. Empty on
+    /// older payloads (the UI falls back to ``lede``).
+    public let summary: String
     /// The single most important item of the day, rendered large as the lead story —
     /// separate from ``sections`` so the brief leads with a real headline rather than
     /// a flat list (design §brief-design-language, "lead story"). `nil` on a quiet day
@@ -43,6 +47,7 @@ public struct Brief: Sendable, Codable, Equatable, Hashable, Identifiable {
         spaceFilter: String? = nil,
         masthead: String = "",
         lede: String = "",
+        summary: String = "",
         lead: BriefEntry? = nil,
         mood: BriefMood? = nil,
         hero: HeroArtwork? = nil,
@@ -56,6 +61,7 @@ public struct Brief: Sendable, Codable, Equatable, Hashable, Identifiable {
         self.spaceFilter = spaceFilter
         self.masthead = masthead
         self.lede = lede
+        self.summary = summary
         self.lead = lead
         self.mood = mood
         self.hero = hero
@@ -66,7 +72,7 @@ public struct Brief: Sendable, Codable, Equatable, Hashable, Identifiable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, generatedAt, spaceFilter, masthead, lede, lead, mood, hero
+        case id, generatedAt, spaceFilter, masthead, lede, summary, lead, mood, hero
         case sections, signalsRead, sources, connectorErrors
     }
 
@@ -78,6 +84,7 @@ public struct Brief: Sendable, Codable, Equatable, Hashable, Identifiable {
         spaceFilter = try c.decodeIfPresent(String.self, forKey: .spaceFilter)
         masthead = try c.decodeIfPresent(String.self, forKey: .masthead) ?? ""
         lede = try c.decodeIfPresent(String.self, forKey: .lede) ?? ""
+        summary = try c.decodeIfPresent(String.self, forKey: .summary) ?? ""
         lead = try c.decodeIfPresent(BriefEntry.self, forKey: .lead)
         mood = try c.decodeIfPresent(BriefMood.self, forKey: .mood)
         hero = try c.decodeIfPresent(HeroArtwork.self, forKey: .hero)

@@ -6,6 +6,7 @@ import os
 import Persistence
 import Pipeline
 import Secrets
+import SlackConnector
 import ServiceManagement
 import SwiftUI
 
@@ -40,7 +41,23 @@ public final class AppModel {
     /// The configured connections (connectors + their accounts).
     public private(set) var connections: [Connection] = []
     /// The available spaces (Work / Personal / custom).
+    ///
+    /// Model-only: Spaces have **no UI**. Every account is filed under the default
+    /// space, and `BriefGenerator` is never handed a space filter, so the tag has no
+    /// effect on a brief today. The API and the seed stay because a per-Space brief (a
+    /// separate work edition on its own schedule) is the obvious next use, and asking
+    /// the reader to sort accounts into buckets that changed nothing was confusing.
     public private(set) var spaces: [Space] = []
+    /// The Slack channels the connected account belongs to, for Settings' opt-out list.
+    /// Empty until ``loadSlackChannels()`` runs (it costs a network call, so it's loaded
+    /// on demand rather than at bootstrap).
+    public private(set) var slackChannels: [SlackConnector.MemberChannel] = []
+    /// Whether ``loadSlackChannels()`` is in flight.
+    public private(set) var isLoadingSlackChannels = false
+    /// The Slack channels the reader chose to cover. Allow-list, capped at
+    /// ``SlackConnector/maxSelectableChannels`` — empty means channels aren't covered
+    /// at all (DMs and @-mentions are unaffected).
+    public private(set) var selectedSlackChannelIDs: Set<String> = []
 
     /// The daily fire-time (bound by the time pickers).
     public var briefTime = FireTime(hour: 7, minute: 0)
@@ -186,7 +203,7 @@ public final class AppModel {
             let adapter = try environment.providerRegistry.makeAdapter(selectedProvider, config: config)
             let template = PromptTemplate.load(from: environment.promptsDirectory)
 
-            var registry = environment.makeRegistry()
+            var registry = await environment.makeRegistry()
             let accountsByConnector = try await self.accountsByConnector()
             // Disable connectors with no enabled accounts so the fan-out skips them.
             for id in registry.registeredIDs where (accountsByConnector[id] ?? []).isEmpty {
@@ -681,6 +698,62 @@ public final class AppModel {
                 isEnabled: true
             )
             try await environment.connectionRepository.save(connection)
+        }
+    }
+
+    // MARK: - Slack channel coverage
+
+    /// Loads the Slack channels the connected account belongs to, for Settings' opt-out
+    /// list, alongside the currently stored exclusions.
+    ///
+    /// Best-effort and non-fatal: Slack not being connected (or the listing failing) just
+    /// leaves the list empty, since this is a refinement of coverage rather than
+    /// something a brief depends on.
+    public func loadSlackChannels() async {
+        guard let account = connections.first(where: { $0.connectorId == .slack })?.accounts.first else {
+            slackChannels = []
+            return
+        }
+        isLoadingSlackChannels = true
+        defer { isLoadingSlackChannels = false }
+
+        selectedSlackChannelIDs =
+            (try? await environment.settings.stringSet(forKey: SettingsStore.slackIncludedChannelsKey)) ?? []
+        do {
+            let connector = SlackConnector(tokenProvider: environment.tokenProvider)
+            slackChannels = try await connector.memberChannels(for: account)
+        } catch {
+            Self.logger.warning("Could not list Slack channels: \(error.localizedDescription, privacy: .public)")
+            slackChannels = []
+        }
+    }
+
+    /// Whether another channel may still be picked, or the cap has been reached.
+    public var canSelectMoreSlackChannels: Bool {
+        selectedSlackChannelIDs.count < SlackConnector.maxSelectableChannels
+    }
+
+    /// The cap on how many Slack channels may be covered.
+    public var maxSlackChannels: Int { SlackConnector.maxSelectableChannels }
+
+    /// Adds or removes one Slack channel from the covered set, persisting the change.
+    ///
+    /// Selecting past the cap is refused rather than silently trimmed, so the count the
+    /// reader sees always matches what the next brief will actually sweep.
+    public func setSlackChannel(id: String, included: Bool) async {
+        var selected = selectedSlackChannelIDs
+        if included {
+            guard selected.count < SlackConnector.maxSelectableChannels else { return }
+            selected.insert(id)
+        } else {
+            selected.remove(id)
+        }
+        guard selected != selectedSlackChannelIDs else { return }
+        selectedSlackChannelIDs = selected
+        do {
+            try await environment.settings.setStringSet(selected, forKey: SettingsStore.slackIncludedChannelsKey)
+        } catch {
+            lastError = "Could not save the Slack channel selection."
         }
     }
 

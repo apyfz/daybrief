@@ -41,7 +41,7 @@ enum SlackResponse {
         case "missing_scope":
             let which = needed.map { " (\($0))" } ?? ""
             return .authFailed(reason: "Slack is missing a permission\(which). Add the User Token Scopes "
-                + "(search:read, im:read, im:history, mpim:read, mpim:history, users:read), reinstall the app, "
+                + "(\(SlackSetup.requiredScopes.joined(separator: ", "))), reinstall the app, "
                 + "then paste the new xoxp- token.")
         case "not_authed", "invalid_auth", "account_inactive", "token_revoked",
              "token_expired", "no_permission", "not_allowed_token_type":
