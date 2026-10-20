@@ -69,17 +69,16 @@ public struct SettingsView: View {
         HStack(spacing: 0) {
             SettingsSidebar(model: model, selection: $pane)
 
-            SettingsRailDivider()
-
             ScrollView {
                 SettingsPaneContent(model: model, pane: pane)
-                    .padding(.horizontal, 32)
-                    .padding(.vertical, 28)
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 20)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.white)
         }
-        .background(DaybriefTheme.paper)
-        .frame(minWidth: 760, minHeight: 560)
+        .frame(minWidth: 740, idealWidth: 780, minHeight: 380)
+        .background(SettingsWindowSizing(pane: pane))
     }
 }
 
@@ -100,14 +99,17 @@ public struct SettingsPaneContent: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 22) {
+        VStack(alignment: .leading, spacing: 16) {
+            if pane != .tools {
             VStack(alignment: .leading, spacing: 3) {
                 Text(pane.heading)
-                    .font(DaybriefTheme.serifDisplay(26))
+                    .font(.system(size: 22, weight: .semibold))
                     .foregroundStyle(DaybriefTheme.ink)
                 Text(pane.subheading)
-                    .font(DaybriefTheme.serifBody(13))
+                    .font(.system(size: 13))
                     .foregroundStyle(DaybriefTheme.inkSecondary)
+            }
+
             }
 
             switch pane {
@@ -117,7 +119,6 @@ public struct SettingsPaneContent: View {
             case .app: AppPane(model: model)
             }
         }
-        .frame(maxWidth: 560, alignment: .leading)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -140,12 +141,11 @@ struct SettingsSidebar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Daybrief")
-                .font(DaybriefTheme.serifDisplay(19))
-                .foregroundStyle(DaybriefTheme.ink)
-                .padding(.horizontal, 16)
-                .padding(.top, 22)
-                .padding(.bottom, 18)
+            SetupArtwork(title: "Daybrief", subtitle: "Your morning,\nin focus.", titleSize: 26, textColor: DaybriefTheme.accent, isSidebar: true)
+                .frame(height: 150)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .padding(12)
+                .padding(.bottom, 4)
 
             VStack(spacing: 2) {
                 ForEach(SettingsPane.allCases) { pane in
@@ -159,16 +159,16 @@ struct SettingsSidebar: View {
             // The one fact worth standing on a settings window: when the next edition
             // lands. It's what everything here is in service of.
             VStack(alignment: .leading, spacing: 3) {
-                Text("NEXT EDITION")
-                    .font(DaybriefTheme.sansMedium(9))
-                    .tracking(0.6)
-                    .foregroundStyle(DaybriefTheme.inkSecondary)
+                Text("Your next edition")
+                    .font(.system(size: 9, weight: .medium))
+
+                    .foregroundStyle(DaybriefTheme.ink)
                 HStack(spacing: 6) {
                     Circle()
                         .fill(DaybriefTheme.accent)
                         .frame(width: 6, height: 6)
                     Text(Self.timeText(model.briefTime))
-                        .font(DaybriefTheme.serifBody(15))
+                        .font(.system(size: 14, weight: .medium))
                         .foregroundStyle(DaybriefTheme.ink)
                 }
             }
@@ -177,10 +177,7 @@ struct SettingsSidebar: View {
         }
         .frame(width: 188, alignment: .leading)
         .frame(maxHeight: .infinity)
-        // A hair darker than the page so the rail reads as a margin rather than a panel.
-        // Explicitly on paper, not a bare tint: an alpha over nothing composites onto
-        // the window's backing, which renders the rail black.
-        .background(DaybriefTheme.paper.overlay(DaybriefTheme.ink.opacity(0.045)))
+        .background(.clear)
     }
 }
 
@@ -197,17 +194,17 @@ private struct SidebarRow: View {
                 Image(systemName: pane.symbol)
                     .font(.system(size: 12, weight: .medium))
                     .frame(width: 16)
-                    .foregroundStyle(isSelected ? DaybriefTheme.ink : DaybriefTheme.inkSecondary)
+                    .foregroundStyle(DaybriefTheme.ink)
                 Text(pane.title)
-                    .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
-                    .foregroundStyle(isSelected ? DaybriefTheme.ink : DaybriefTheme.inkSecondary)
+                    .font(isSelected ? .system(size: 13, weight: .medium) : .system(size: 13))
+                    .foregroundStyle(DaybriefTheme.ink)
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 7)
+            .padding(.vertical, 10)
             .background {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(isSelected ? DaybriefTheme.accent.opacity(0.28)
+                    .fill(isSelected ? DaybriefTheme.ink.opacity(0.07)
                         : DaybriefTheme.ink.opacity(isHovering ? 0.05 : 0))
             }
             .contentShape(Rectangle())
@@ -236,16 +233,13 @@ public struct SettingsWindowSnapshotView: View {
         HStack(spacing: 0) {
             SettingsSidebar(model: model, selection: .constant(pane))
 
-            SettingsRailDivider()
-
             SettingsPaneContent(model: model, pane: pane)
-                .padding(.horizontal, 32)
-                .padding(.vertical, 28)
+                .padding(.horizontal, 24)
+                .padding(.vertical, 20)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .background(.white)
         }
-        // Matches the real window. Without it the rail hairline's alpha composites onto
-        // the renderer's black backing and the snapshot shows a rule that isn't there.
-        .background(DaybriefTheme.paper)
+        .background(SettingsWindowMaterial())
     }
 }
 
@@ -262,13 +256,20 @@ struct SettingsGroup<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if let title {
-                Text(title.uppercased())
-                    .font(DaybriefTheme.sansMedium(10))
-                    .tracking(0.7)
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(DaybriefTheme.inkSecondary)
             }
             VStack(alignment: .leading, spacing: 0) {
                 content
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 4)
+            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
+            .overlay {
+                RoundedRectangle(cornerRadius: 10)
+                    .strokeBorder(DaybriefTheme.ink.opacity(0.08), lineWidth: 1)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

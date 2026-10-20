@@ -50,6 +50,25 @@ public enum DaybriefIcon {
         }
     }
 
+    /// Full-colour service marks for connection management. The editorial brief
+    /// continues to use the monochrome `connector(_:)` glyphs.
+    public static func coloredConnector(_ connector: ConnectorID) -> Image {
+        #if canImport(AppKit)
+            let name = "\(connector.rawValue)-color"
+            if let cached = cache.object(forKey: name as NSString) {
+                return Image(nsImage: cached).renderingMode(.original)
+            }
+            if let url = Bundle.module.url(forResource: name, withExtension: "png", subdirectory: "Icons"),
+               let image = NSImage(contentsOf: url) {
+                image.isTemplate = false
+                cache.setObject(image, forKey: name as NSString)
+                return Image(nsImage: image).renderingMode(.original)
+            }
+        #endif
+        // Notion's official mark is black and white.
+        return self.connector(connector)
+    }
+
     /// Loads a vector PDF from `Bundle.module/Icons` as a template image.
     ///
     /// Falls back to an SF Symbol if the resource is missing, so a packaging mistake

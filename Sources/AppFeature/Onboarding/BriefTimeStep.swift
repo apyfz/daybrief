@@ -17,7 +17,7 @@ struct BriefTimeStep: View {
                 // (the compact `.field` picker rendered far too small).
                 TimeUnitStepper(value: hourBinding, range: 0 ... 23)
                 Text(":")
-                    .font(DaybriefTheme.serifDisplay(40))
+                    .font(.system(size: 40, weight: .semibold))
                     .foregroundStyle(DaybriefTheme.ink)
                 TimeUnitStepper(value: minuteBinding, range: 0 ... 59)
             }
@@ -68,7 +68,7 @@ private struct TimeUnitStepper: View {
     var body: some View {
         HStack(spacing: 6) {
             Text(String(format: "%02d", value))
-                .font(DaybriefTheme.serifDisplay(40))
+                .font(.system(size: 40, weight: .semibold))
                 .monospacedDigit()
                 .foregroundStyle(DaybriefTheme.ink)
             Stepper("", value: $value, in: range)

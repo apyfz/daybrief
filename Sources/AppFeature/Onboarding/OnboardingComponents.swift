@@ -10,20 +10,13 @@ struct DBPrimaryButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 8) {
-                if isBusy {
-                    ProgressView()
-                        .controlSize(.small)
-                        .tint(DaybriefTheme.ink)
-                }
+                if isBusy { ProgressView().controlSize(.small) }
                 Text(title)
-                    .font(.system(size: 14, weight: .semibold))
             }
-            .foregroundStyle(DaybriefTheme.ink)
-            .padding(.horizontal, 18)
-            .padding(.vertical, 9)
-            .background(DaybriefTheme.accent, in: Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.borderedProminent)
+        .tint(.accentColor)
+        .controlSize(.regular)
     }
 }
 
@@ -41,21 +34,11 @@ struct DBSecondaryButton: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 6) {
-                if let systemImage {
-                    Image(systemName: systemImage)
-                }
-                Text(title)
-                    .font(.system(size: 13, weight: .medium))
-            }
-            .foregroundStyle(DaybriefTheme.ink)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 7)
-            .background(
-                Capsule().stroke(DaybriefTheme.ink.opacity(0.18), lineWidth: 1)
-            )
+            if let systemImage { Label(title, systemImage: systemImage) }
+            else { Text(title) }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.bordered)
+        .controlSize(.regular)
     }
 }
 
@@ -69,7 +52,7 @@ struct DBLabeledField: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(label)
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(DaybriefTheme.inkSecondary)
             Group {
                 if isSecure {
@@ -109,10 +92,10 @@ struct DBGuidedSteps: View {
                     Image(systemName: "list.number")
                         .font(.system(size: 12))
                     Text(title)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 13, weight: .medium))
                     Spacer()
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 11, weight: .medium))
                         .rotationEffect(.degrees(isExpanded ? 0 : -90))
                 }
                 .foregroundStyle(DaybriefTheme.ink)
@@ -126,10 +109,10 @@ struct DBGuidedSteps: View {
                     ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
                         HStack(alignment: .firstTextBaseline, spacing: 10) {
                             Text("\(index + 1)")
-                                .font(.system(size: 11, weight: .bold))
+                                .font(.system(size: 11, weight: .medium))
                                 .foregroundStyle(DaybriefTheme.ink)
                                 .frame(width: 18, height: 18)
-                                .background(DaybriefTheme.accent.opacity(0.5), in: Circle())
+                                .background(Color.accentColor.opacity(0.1), in: Circle())
                             Text(step)
                                 .font(.system(size: 12))
                                 .foregroundStyle(DaybriefTheme.inkSecondary)
@@ -186,12 +169,12 @@ struct DBStepList: View {
     private func stepRow(index: Int, step: DBStep) -> some View {
         HStack(alignment: .top, spacing: 11) {
             Text("\(index + 1)")
-                .font(.system(size: 12, weight: .bold))
+                .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(DaybriefTheme.ink)
                 .frame(width: 22, height: 22)
                 .background(
                     Circle().fill(
-                        step.emphasized ? DaybriefTheme.accent : DaybriefTheme.accent.opacity(0.45)
+                        step.emphasized ? Color.accentColor.opacity(0.15) : Color.black.opacity(0.05)
                     )
                 )
                 .accessibilityHidden(true)
@@ -211,10 +194,10 @@ struct DBStepList: View {
         .background {
             if step.emphasized {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(DaybriefTheme.accent.opacity(0.16))
+                    .fill(Color.accentColor.opacity(0.07))
                     .overlay(
                         RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .strokeBorder(DaybriefTheme.accent.opacity(0.55), lineWidth: 1)
+                            .strokeBorder(Color.accentColor.opacity(0.2), lineWidth: 1)
                     )
             }
         }
@@ -239,7 +222,7 @@ struct DBOpenLink: View {
                 Image(systemName: "arrow.up.forward.square")
                     .font(.system(size: 12, weight: .medium))
                 Text(label)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: 12, weight: .medium))
             }
             .foregroundStyle(DaybriefTheme.ink)
             .padding(.horizontal, 12)
@@ -318,10 +301,8 @@ struct DBDetailSection<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(title)
-                .font(.system(size: 11, weight: .bold))
-                .tracking(0.6)
+                .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(DaybriefTheme.inkSecondary)
-                .textCase(.uppercase)
             content
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -351,13 +332,13 @@ struct DBConnectorRow: View {
                     .daybriefIcon(size: 18)
                     .foregroundStyle(DaybriefTheme.ink)
                     .frame(width: 38, height: 38)
-                    .background(DaybriefTheme.accent.opacity(0.35), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .background(DaybriefTheme.ink.opacity(0.04), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 8) {
                         Text(name)
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(DaybriefTheme.ink)
                         if isConnected {
                             statusBadge
@@ -373,9 +354,9 @@ struct DBConnectorRow: View {
 
                 HStack(spacing: 5) {
                     Text(isConnected ? "Edit" : "Set up")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 13, weight: .medium))
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 11, weight: .medium))
                 }
                 .foregroundStyle(DaybriefTheme.ink)
             }
@@ -400,13 +381,13 @@ struct DBConnectorRow: View {
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 10))
             Text(connectedLabel ?? "Connected")
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: 11, weight: .medium))
                 .lineLimit(1)
         }
         .foregroundStyle(DaybriefTheme.ink)
         .padding(.horizontal, 8)
         .padding(.vertical, 3)
-        .background(DaybriefTheme.accent.opacity(0.5), in: Capsule())
+        .background(Color.accentColor.opacity(0.1), in: Capsule())
     }
 }
 
@@ -441,5 +422,64 @@ struct DBSpacePills: View {
                 .buttonStyle(.plain)
             }
         }
+    }
+}
+
+/// The same painting-and-masthead treatment as the brief, scaled for setup chrome.
+struct SetupArtwork: View {
+    let title: String
+    let subtitle: String
+    var titleSize: CGFloat = 30
+    var textColor: Color = DaybriefTheme.paper
+    var isSidebar: Bool = false
+
+    var body: some View {
+        GeometryReader { geometry in
+            HeroArtworkView(nil)
+                .frame(width: geometry.size.width, height: geometry.size.height)
+                .clipped()
+                .overlay(.black.opacity(0.34))
+                .overlay {
+                    if isSidebar {
+                        LinearGradient(colors: [.black.opacity(0.35), .clear], startPoint: .top, endPoint: .bottom)
+                    }
+                }
+                .overlay(alignment: isSidebar ? .center : .bottomLeading) {
+                    if isSidebar {
+                        VStack(spacing: 0) {
+                            Text("Your")
+                                .font(DaybriefTheme.serifItalic(25))
+                                .frame(height: 27)
+                            Text("Morning")
+                                .font(DaybriefTheme.serifDisplay(32))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
+                                .frame(height: 35)
+                            Text("in focus")
+                                .font(DaybriefTheme.serifItalic(25))
+                                .frame(height: 30)
+                                .padding(.top, -5)
+                        }
+                        .foregroundStyle(textColor)
+                        .multilineTextAlignment(.center)
+                        .shadow(color: .black.opacity(0.35), radius: 6, y: 1)
+                        .padding(.horizontal, 10)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel("Your morning in focus")
+                    } else {
+                        VStack(alignment: .leading, spacing: 7) {
+                            Text(title)
+                                .font(DaybriefTheme.serifDisplay(titleSize))
+                                .foregroundStyle(textColor)
+                            Text(subtitle)
+                                .font(DaybriefTheme.serifItalic(13))
+                                .foregroundStyle(textColor)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .padding(18)
+                    }
+                }
+        }
+        .accessibilityElement(children: .combine)
     }
 }

@@ -15,7 +15,7 @@ enum OnboardingConnector: Identifiable, CaseIterable {
 
     /// The connector glyph shown on the hub row and the screen header.
     var icon: Image {
-        DaybriefIcon.connector(connectorID)
+        DaybriefIcon.coloredConnector(connectorID)
     }
 
     /// The connector's display name.
@@ -56,20 +56,22 @@ enum OnboardingConnector: Identifiable, CaseIterable {
 private struct ConnectorScreenHeader: View {
     let connector: OnboardingConnector
     let brings: String
+    @Environment(\.connectorChrome) private var chrome
 
     var body: some View {
+        if chrome == .sheet {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 14) {
                 connector.icon
                     .daybriefIcon(size: 24)
                     .foregroundStyle(DaybriefTheme.ink)
                     .frame(width: 52, height: 52)
-                    .background(DaybriefTheme.accent.opacity(0.35), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                    .background(Color.black.opacity(0.03), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(connector.name)
-                        .font(DaybriefTheme.serifDisplay(24))
+                        .font(.system(size: 24, weight: .semibold))
                         .foregroundStyle(DaybriefTheme.ink)
                     Text(brings)
                         .font(.system(size: 13))
@@ -88,6 +90,7 @@ private struct ConnectorScreenHeader: View {
             .foregroundStyle(DaybriefTheme.inkSecondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 }
 
@@ -120,7 +123,7 @@ private struct ExpectScreenCallout: View {
                     .font(.system(size: 13))
                     .accessibilityHidden(true)
                 Text(title)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 13, weight: .medium))
             }
             .foregroundStyle(DaybriefTheme.ink)
 
@@ -206,7 +209,7 @@ private struct ConnectorDetailScaffold<Body: View, Footer: View>: View {
                 } label: {
                     HStack(spacing: 5) {
                         Image(systemName: "chevron.left")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.system(size: 12, weight: .medium))
                         Text("All tools")
                             .font(.system(size: 13, weight: .medium))
                     }
@@ -241,7 +244,7 @@ private struct ConnectorDetailScaffold<Body: View, Footer: View>: View {
             .padding(.horizontal, 28)
             .padding(.vertical, 16)
         }
-        .background(DaybriefTheme.paper)
+        .background(.white)
         .frame(width: 560, height: 640)
     }
 }
@@ -353,7 +356,7 @@ struct GoogleConnectorScreen: View {
                     .font(.system(size: 13))
                     .accessibilityHidden(true)
                 Text("You already set up a Google client")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 13, weight: .medium))
             }
             .foregroundStyle(DaybriefTheme.ink)
 
@@ -513,6 +516,7 @@ struct GoogleConnectorScreen: View {
 /// A dedicated screen for connecting Slack via a pasted `xoxp-` user token, split
 /// into short friendly parts with the exact values to type.
 struct SlackConnectorScreen: View {
+    @Environment(\.connectorChrome) private var chrome
     @Bindable var model: AppModel
     let connector: OnboardingConnector
     let onClose: () -> Void
@@ -602,7 +606,7 @@ struct SlackConnectorScreen: View {
                 }
             }
 
-            if isConnected {
+            if isConnected && chrome == .sheet {
                 DBDetailSection(title: "Part 7 · Pick your channels") {
                     SlackChannelPicker(
                         model: model,

@@ -205,6 +205,10 @@ func renderSettings(to outputPath: String) throws {
         )
     }
 
+    if CommandLine.arguments.contains("--native") {
+        try renderNative(view, size: NSSize(width: 820, height: 560), to: outputPath)
+        return
+    }
     let renderer = ImageRenderer(content: view)
     renderer.scale = 2
     renderer.isOpaque = true
@@ -220,8 +224,65 @@ func renderSettings(to outputPath: String) throws {
     )
 }
 
+/// AppKit-hosted rendering includes native text fields, pickers, and steppers that
+/// SwiftUI ImageRenderer cannot rasterize. Uses only the isolated preview model.
+@MainActor
+func renderNative<V: View>(_ view: V, size: NSSize, to path: String) throws {
+    let app = NSApplication.shared
+    app.setActivationPolicy(.accessory)
+    let window = NSWindow(contentRect: NSRect(origin: .zero, size: size),
+                          styleMask: [.borderless], backing: .buffered, defer: false)
+    let hosting = NSHostingView(rootView: view.environment(\.colorScheme, .light))
+    window.contentView = hosting
+    window.setContentSize(size)
+    window.orderFront(nil)
+    hosting.layoutSubtreeIfNeeded()
+    RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.3))
+    guard let bitmap = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds) else {
+        throw CocoaError(.fileWriteUnknown)
+    }
+    hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
+    guard let png = bitmap.representation(using: .png, properties: [:]) else {
+        throw CocoaError(.fileWriteUnknown)
+    }
+    try png.write(to: URL(fileURLWithPath: path))
+    window.orderOut(nil)
+}
+
 @MainActor
 func render() throws {
+    // Load the app's existing artwork when running the package renderer outside its bundle.
+    let artURL = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("App/Assets.xcassets/Art/pissarro-tuileries-winter.imageset/pissarro-tuileries-winter.jpg")
+    if let image = NSImage(contentsOf: artURL) {
+        image.setName("pissarro-tuileries-winter")
+    }
+    if CommandLine.arguments.contains("--onboarding") {
+        let path = CommandLine.arguments.first { $0.hasSuffix(".png") } ?? "/tmp/daybrief-onboarding.png"
+        let step = CommandLine.arguments.compactMap(Int.init).first ?? 0
+        let model = AppModel.preview(brief: makeSampleBrief())
+        model.selectedModel = ""
+        if CommandLine.arguments.contains("--native") {
+            try renderNative(OnboardingView(model: model, snapshotStep: step),
+                             size: NSSize(width: 680, height: 800), to: path)
+            return
+        }
+        let renderer = ImageRenderer(content:
+            OnboardingView(model: model, snapshotStep: step)
+                .frame(width: 680, height: 800)
+                .environment(\.colorScheme, .light)
+        )
+        renderer.scale = 2
+        renderer.isOpaque = true
+        guard let image = renderer.cgImage,
+              let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        try png.write(to: URL(fileURLWithPath: path))
+        return
+    }
+
     // `--settings` renders the Settings window instead of the brief panel, so its
     // layout can be reviewed offscreen the same way the edition is.
     if CommandLine.arguments.contains("--settings") {

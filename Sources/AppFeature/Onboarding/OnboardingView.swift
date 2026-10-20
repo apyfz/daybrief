@@ -12,6 +12,7 @@ import SwiftUI
 public struct OnboardingView: View {
     @Bindable private var model: AppModel
     @State private var step: Step = .apiKey
+    private var snapshot = false
 
     /// The ordered onboarding steps.
     private enum Step: Int, CaseIterable, Identifiable {
@@ -46,50 +47,84 @@ public struct OnboardingView: View {
         self.model = model
     }
 
+    /// Composes the real setup content without a ScrollView for offscreen review.
+    public init(model: AppModel, snapshotStep: Int) {
+        self.model = model
+        self._step = State(initialValue: Step(rawValue: snapshotStep) ?? .apiKey)
+        self.snapshot = true
+    }
+
     public var body: some View {
         VStack(spacing: 0) {
             header
-            Divider().overlay(DaybriefTheme.ink.opacity(0.08))
+            SettingsRowDivider()
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    stepHeading
-                    stepContent
-                }
-                .padding(.horizontal, 40)
-                .padding(.vertical, 32)
-                .frame(maxWidth: 620, alignment: .leading)
-                .frame(maxWidth: .infinity)
+            if snapshot {
+                pageContent
+                    .frame(maxHeight: .infinity, alignment: .top)
+            } else {
+                ScrollView { pageContent }
             }
 
-            Divider().overlay(DaybriefTheme.ink.opacity(0.08))
+            SettingsRowDivider()
             footer
         }
-        .background(DaybriefTheme.paper)
-        .frame(minWidth: 640, minHeight: 560)
+        .background(.white)
+        .frame(minWidth: 680, minHeight: 720)
+        .tint(DaybriefTheme.ink)
     }
 
     // MARK: - Chrome
 
-    private var header: some View {
-        VStack(spacing: 12) {
-            Text("Daybrief")
-                .font(DaybriefTheme.serifDisplay(34))
-                .foregroundStyle(DaybriefTheme.ink)
-            StepDots(steps: Step.allCases.count, current: step.rawValue)
+    private var pageContent: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            stepHeading
+            stepContent
         }
-        .padding(.top, 28)
-        .padding(.bottom, 20)
+        .padding(.horizontal, 40)
+        .padding(.vertical, 28)
+        .frame(maxWidth: 700, alignment: .leading)
         .frame(maxWidth: .infinity)
+    }
+
+    private var header: some View {
+        VStack(spacing: 0) {
+            SetupArtwork(title: "A better start to your day.", subtitle: "Your morning, thoughtfully put together by Daybrief.")
+                .frame(height: 150)
+            HStack(spacing: 20) {
+                ForEach(Step.allCases) { item in
+                    HStack(spacing: 7) {
+                        Group {
+                            if item.rawValue < step.rawValue {
+                                Image(systemName: "checkmark")
+                            } else {
+                                Text("\(item.rawValue + 1)")
+                            }
+                        }
+                            .font(.system(size: 11, weight: .medium))
+                            .frame(width: 23, height: 23)
+                            .background(item == step ? DaybriefTheme.accent : DaybriefTheme.ink.opacity(0.06), in: Circle())
+                        Text(["AI model", "Your tools", "Delivery"][item.rawValue])
+                            .font(.system(size: 12, weight: .medium))
+                    }
+                    .foregroundStyle(item == step ? DaybriefTheme.ink : DaybriefTheme.inkSecondary)
+                    if item != .briefTime { Spacer(minLength: 0) }
+                }
+            }
+            .padding(.horizontal, 40)
+            .padding(.vertical, 16)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Step \(step.rawValue + 1) of 3: \(step.title)")
+        }
     }
 
     private var stepHeading: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(step.title)
-                .font(DaybriefTheme.serifDisplay(26))
+                .font(.system(size: 30, weight: .semibold))
                 .foregroundStyle(DaybriefTheme.ink)
             Text(step.subtitle)
-                .font(DaybriefTheme.serifBody(15))
+                .font(.system(size: 13))
                 .foregroundStyle(DaybriefTheme.inkSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -153,22 +188,5 @@ public struct OnboardingView: View {
     private func goBack() {
         guard let prev = Step(rawValue: step.rawValue - 1) else { return }
         withAnimation(.easeInOut(duration: 0.18)) { step = prev }
-    }
-}
-
-/// The progress dots shown under the wordmark.
-private struct StepDots: View {
-    let steps: Int
-    let current: Int
-
-    var body: some View {
-        HStack(spacing: 8) {
-            ForEach(0 ..< steps, id: \.self) { index in
-                Capsule()
-                    .fill(index == current ? DaybriefTheme.accent : DaybriefTheme.ink.opacity(0.15))
-                    .frame(width: index == current ? 22 : 8, height: 8)
-                    .animation(.easeInOut(duration: 0.18), value: current)
-            }
-        }
     }
 }

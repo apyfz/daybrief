@@ -30,3 +30,14 @@ The PDFs were generated from the upstream SVGs with a small WebKit-based convert
 hand-rolled parser would get wrong.
 
 Add a new icon by dropping its PDF here and naming it in `DaybriefIcon`.
+
+## Full-colour connection marks
+
+Settings uses these original-colour PNGs, downloaded from the services' own asset hosts:
+
+- `gcal-color.png`: https://www.gstatic.com/images/branding/product/2x/calendar_2020q4_48dp.png
+- `gmail-color.png`: https://www.gstatic.com/images/branding/product/2x/gmail_2020q4_48dp.png
+- `slack-color.png`: https://a.slack-edge.com/80588/marketing/img/icons/icon_slack_hash_colored.png
+
+These remain their owners' trademarks, used solely to identify the connected service.
+Notion keeps its monochrome mark. The brief's existing template glyphs are unchanged.

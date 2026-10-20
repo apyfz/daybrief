@@ -1,3 +1,4 @@
+import AppKit
 import DaybriefCore
 import LLMKit
 import Pipeline
@@ -26,7 +27,13 @@ struct ToolsPane: View {
         if let selected {
             ConnectorDetail(model: model, connector: selected) { self.selected = nil }
         } else {
-            connectorList
+            VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Connected tools").font(.system(size: 22, weight: .semibold))
+                    Text("What Daybrief reads each morning.").font(.system(size: 13)).foregroundStyle(.secondary)
+                }
+                connectorList
+            }
         }
     }
 
@@ -59,15 +66,20 @@ private struct ConnectorRow: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 12) {
-                DaybriefIcon.connector(connector.connectorID)
-                    .daybriefIcon(size: 15)
+                DaybriefIcon.coloredConnector(connector.connectorID)
+                    .daybriefIcon(size: 26)
                     .foregroundStyle(DaybriefTheme.ink)
-                    .frame(width: 28, height: 28)
-                    .background(DaybriefTheme.accent.opacity(0.3), in: RoundedRectangle(cornerRadius: 7))
+                    .frame(width: 40, height: 40)
+                    .background(.white, in: RoundedRectangle(cornerRadius: 10))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 10)
+                            .strokeBorder(.black.opacity(0.06), lineWidth: 1)
+                    }
+                    .shadow(color: .black.opacity(0.04), radius: 2, y: 1)
 
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: 5) {
                     Text(connector.name)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 14, weight: .medium))
                         .foregroundStyle(DaybriefTheme.ink)
                     Text(status)
                         .font(.system(size: 11))
@@ -78,7 +90,7 @@ private struct ConnectorRow: View {
 
                 if !isConnected {
                     Text("Set up")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: 11))
                         .foregroundStyle(DaybriefTheme.ink)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
@@ -86,10 +98,10 @@ private struct ConnectorRow: View {
                 }
 
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 11))
                     .foregroundStyle(DaybriefTheme.inkSecondary)
             }
-            .padding(.vertical, 10)
+            .padding(.vertical, 12)
             .padding(.horizontal, 8)
             .background {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -113,7 +125,7 @@ private struct ConnectorRow: View {
     /// reads, and for Slack how many channels are covered.
     private var status: String {
         guard let first = accounts.first else { return connector.surfaces }
-        var parts = [first.label]
+        var parts = [first.label == connector.name ? "Connected" : first.label]
         if accounts.count > 1 { parts.append("+\(accounts.count - 1) more") }
         if connector.connectorID == .slack {
             let count = model.selectedSlackChannelIDs.count
@@ -128,15 +140,20 @@ private struct ConnectorDetail: View {
     @Bindable var model: AppModel
     let connector: OnboardingConnector
     let onBack: () -> Void
+    @State private var showSetup = false
+
+    private var isConnected: Bool {
+        model.connections.contains { $0.connectorId == connector.connectorID && !$0.accounts.isEmpty }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             Button(action: onBack) {
                 HStack(spacing: 5) {
                     Image(systemName: "chevron.left")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 11))
                     Text("All tools")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 12))
                 }
                 .foregroundStyle(DaybriefTheme.inkSecondary)
                 .contentShape(Rectangle())
@@ -144,6 +161,18 @@ private struct ConnectorDetail: View {
             .buttonStyle(.plain)
             .pointerStyle(.link)
             .accessibilityLabel("Back to all tools")
+
+            HStack(spacing: 12) {
+                connector.icon
+                    .daybriefIcon(size: 32)
+                    .frame(width: 52, height: 52)
+                    .background(.white, in: RoundedRectangle(cornerRadius: 12))
+                    .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.black.opacity(0.08)))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(connector.name).font(.system(size: 22, weight: .semibold))
+                    Text(connector.surfaces).font(.system(size: 13)).foregroundStyle(.secondary)
+                }
+            }
 
             if let connection = model.connections.first(where: { $0.connectorId == connector.connectorID }),
                !connection.accounts.isEmpty {
@@ -159,12 +188,24 @@ private struct ConnectorDetail: View {
                model.connections.contains(where: { $0.connectorId == .slack && !$0.accounts.isEmpty }) {
                 SettingsGroup(title: "Channels") {
                     SlackChannelsSection(model: model)
+                        .padding(.vertical, 10)
                 }
             }
 
-            ConnectorDetailScreen(model: model, connector: connector, onClose: onBack)
-                .environment(\.connectorChrome, .inline)
+            if isConnected {
+                DisclosureGroup("Add or reconnect an account", isExpanded: $showSetup) {
+                    setup.padding(.top, 16)
+                }
+                .font(.system(size: 13, weight: .medium))
+            } else {
+                setup
+            }
         }
+    }
+
+    private var setup: some View {
+        ConnectorDetailScreen(model: model, connector: connector, onClose: onBack)
+            .environment(\.connectorChrome, .inline)
     }
 }
 
@@ -174,13 +215,11 @@ struct BriefPane: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
-            SettingsGroup(title: "Delivery") {
-                BriefScheduleSection(model: model)
-            }
-            SettingsGroup(title: "Voice") {
-                BriefVoiceSection(model: model)
-            }
+            BriefScheduleSection(model: model)
+            SettingsRowDivider()
+            BriefVoiceSection(model: model)
         }
+        .padding(.top, 8)
     }
 }
 
@@ -198,9 +237,8 @@ struct AppPane: View {
     @Bindable var model: AppModel
 
     var body: some View {
-        SettingsGroup {
-            AppSection(model: model)
-        }
+        AppSection(model: model)
+            .padding(.top, 8)
     }
 }
 
@@ -235,14 +273,14 @@ private struct ConnectionsSection: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
                 connector.icon
-                    .daybriefIcon(size: 15)
+                    .daybriefIcon(size: 20)
                     .foregroundStyle(DaybriefTheme.ink)
-                    .frame(width: 28, height: 28)
-                    .background(DaybriefTheme.accent.opacity(0.3), in: RoundedRectangle(cornerRadius: 7))
+                    .frame(width: 40, height: 40)
+                    .background(DaybriefTheme.ink.opacity(0.04), in: RoundedRectangle(cornerRadius: 7))
 
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: 5) {
                     Text(connector.name)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 14, weight: .medium))
                         .foregroundStyle(DaybriefTheme.ink)
                     Text(accounts.isEmpty ? "Not connected" : "Connected")
                         .font(.system(size: 11))
@@ -280,17 +318,17 @@ private struct ConnectionRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            DaybriefIcon.connector(connection.connectorId)
-                .daybriefIcon(size: 15)
+            DaybriefIcon.coloredConnector(connection.connectorId)
+                .daybriefIcon(size: 20)
                 .foregroundStyle(DaybriefTheme.ink)
-                .frame(width: 28, height: 28)
-                .background(DaybriefTheme.accent.opacity(0.3), in: RoundedRectangle(cornerRadius: 7))
+                .frame(width: 40, height: 40)
+                .background(DaybriefTheme.ink.opacity(0.04), in: RoundedRectangle(cornerRadius: 7))
 
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 5) {
                 Text(account.label)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 13))
                     .foregroundStyle(DaybriefTheme.ink)
-                Text(connection.displayName)
+                Text("Connected")
                     .font(.system(size: 11))
                     .foregroundStyle(DaybriefTheme.inkSecondary)
             }
@@ -300,7 +338,7 @@ private struct ConnectionRow: View {
                 confirmingRemove = true
             } label: {
                 Image(systemName: "trash")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 12))
                     .foregroundStyle(.red.opacity(0.85))
             }
             .buttonStyle(.plain)
@@ -318,6 +356,7 @@ private struct ConnectionRow: View {
                 Text("This disconnects the account and deletes its saved credentials. You can reconnect it later.")
             }
         }
+        .padding(.vertical, 10)
     }
 
 }
@@ -371,54 +410,65 @@ private struct ModelSection: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            LabeledRow(label: "Provider") {
-                Picker("Provider", selection: $model.selectedProvider) {
-                    ForEach(Provider.allCases) { provider in
-                        Text(displayName(provider)).tag(provider)
+        VStack(alignment: .leading, spacing: 16) {
+            SettingsGroup {
+                LabeledRow(label: "Provider") {
+                    Picker("Provider", selection: $model.selectedProvider) {
+                        ForEach(Provider.allCases) { provider in
+                            Text(displayName(provider)).tag(provider)
+                        }
                     }
+                    .labelsHidden()
                 }
-                .labelsHidden()
-                .frame(maxWidth: 200)
-            }
+                .padding(.vertical, 10)
 
-            if model.selectedProvider.requiresAPIKey {
-                LabeledRow(label: "API key") {
-                    SecureField("Paste a new key (blank keeps current)", text: $apiKey)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(maxWidth: 260)
+                if model.selectedProvider.requiresAPIKey {
+                    SettingsRowDivider()
+                    LabeledRow(label: "API key") {
+                        VStack(alignment: .leading, spacing: 6) {
+                            SecureField("Enter a new API key", text: $apiKey)
+                                .textFieldStyle(.roundedBorder)
+                            Text("Leave blank to keep your saved key.")
+                                .font(.system(size: 11))
+                                .foregroundStyle(DaybriefTheme.inkSecondary)
+                        }
+                    }
+                    .padding(.vertical, 12)
                 }
-            }
 
-            LabeledRow(label: "Model") {
-                HStack(spacing: 8) {
+                SettingsRowDivider()
+                LabeledRow(label: "Model") {
                     if models.isEmpty {
-                        Text(model.selectedModel.isEmpty ? "Save & load to choose" : model.selectedModel)
-                            .font(.system(size: 13))
+                        Text(model.selectedModel.isEmpty ? "Load models to choose one" : model.selectedModel)
+                            .font(.system(size: 12))
                             .foregroundStyle(DaybriefTheme.inkSecondary)
-                            .lineLimit(1)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
                     } else {
                         Picker("Model", selection: $model.selectedModel) {
                             ForEach(visibleModels) { modelRow($0) }
                         }
                         .labelsHidden()
-                        .frame(maxWidth: 260)
                         .onChange(of: model.selectedModel) { _, _ in
                             Task { await model.persistSelectedModel() }
                         }
                     }
-                    DBSecondaryButton(isLoading ? "Loading…" : "Save & load", systemImage: "arrow.clockwise") {
-                        Task { await saveAndLoad() }
-                    }
-                    .disabled(isLoading)
                 }
+                .padding(.vertical, 12)
             }
 
-            if !recommendedModels.isEmpty, !otherModels.isEmpty {
-                Toggle("Show all models", isOn: $showAllModels)
-                    .toggleStyle(.checkbox)
-                    .font(.system(size: 12))
-                    .foregroundStyle(DaybriefTheme.inkSecondary)
+            HStack {
+                if !recommendedModels.isEmpty, !otherModels.isEmpty {
+                    Toggle("Show all models", isOn: $showAllModels)
+                        .toggleStyle(.checkbox)
+                        .font(.system(size: 12))
+                }
+                Spacer()
+                Button(isLoading ? "Loading…" : "Save & load models") {
+                    Task { await saveAndLoad() }
+                }
+                .controlSize(.regular)
+                .disabled(isLoading)
             }
 
             if let selected = models.first(where: { $0.id == model.selectedModel }), selected.isFree {
@@ -427,7 +477,6 @@ private struct ModelSection: View {
                     .foregroundStyle(DaybriefTheme.inkSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-
             if let savedNote {
                 Text(savedNote)
                     .font(.system(size: 11))
@@ -473,6 +522,38 @@ private struct ModelSection: View {
     }
 }
 
+/// A native, keyboard-editable time field with a readable size and visible stepper.
+private struct DeliveryTimePicker: NSViewRepresentable {
+    @Binding var selection: Date
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeNSView(context: Context) -> NSDatePicker {
+        let picker = NSDatePicker()
+        picker.datePickerStyle = .textFieldAndStepper
+        picker.datePickerElements = .hourMinute
+        picker.font = .monospacedDigitSystemFont(ofSize: 26, weight: .medium)
+        picker.drawsBackground = true
+        picker.backgroundColor = .white
+        picker.isBezeled = true
+        picker.setAccessibilityLabel("Delivery time")
+        picker.target = context.coordinator
+        picker.action = #selector(Coordinator.changed(_:))
+        return picker
+    }
+
+    func updateNSView(_ picker: NSDatePicker, context: Context) {
+        context.coordinator.parent = self
+        if picker.dateValue != selection { picker.dateValue = selection }
+    }
+
+    final class Coordinator: NSObject {
+        var parent: DeliveryTimePicker
+        init(_ parent: DeliveryTimePicker) { self.parent = parent }
+        @objc func changed(_ sender: NSDatePicker) { parent.selection = sender.dateValue }
+    }
+}
+
 // MARK: - Schedule
 
 /// The daily brief-time picker.
@@ -480,13 +561,38 @@ private struct BriefScheduleSection: View {
     @Bindable var model: AppModel
 
     var body: some View {
-        LabeledRow(label: "Brief time") {
-            // A single editable time control (the static duplicate display was removed).
-            DatePicker("", selection: timeBinding, displayedComponents: .hourAndMinute)
-                .datePickerStyle(.field)
-                .labelsHidden()
-                .font(.system(size: 14, weight: .semibold))
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Morning delivery")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(DaybriefTheme.ink)
+                Text("Your brief is prepared each day at this time. If your Mac is asleep, it catches up when you wake it.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(DaybriefTheme.inkSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: 14) {
+                Image(systemName: "clock")
+                    .font(.system(size: 22, weight: .regular))
+                    .foregroundStyle(DaybriefTheme.ink)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Every day at")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.secondary)
+                    DeliveryTimePicker(selection: timeBinding)
+                        .frame(width: 180, height: 38)
+                }
+                Spacer(minLength: 12)
+                Text("Local time")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(16)
+            .background(Color.black.opacity(0.025), in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.black.opacity(0.09)))
         }
+        .padding(.vertical, 8)
     }
 
     private var timeBinding: Binding<Date> {
@@ -518,22 +624,21 @@ private struct BriefVoiceSection: View {
     @Bindable var model: AppModel
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Prompt & template")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(DaybriefTheme.ink)
-                Text("Edit the synthesis prompt and render template to retune the brief's voice and layout.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(DaybriefTheme.inkSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 12)
-            DBSecondaryButton("Edit in Finder", systemImage: "square.and.pencil") {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Writing style")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(DaybriefTheme.ink)
+            Text("Make the brief your own. Edit the prompt for its voice and priorities, or the template for its layout.")
+                .font(.system(size: 12))
+                .foregroundStyle(DaybriefTheme.inkSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button {
                 model.openPromptTemplateInFinder()
+            } label: {
+                Label("Open prompt & template", systemImage: "folder")
             }
+            .padding(.top, 2)
         }
-        .padding(.vertical, 10)
     }
 }
 
@@ -544,20 +649,23 @@ private struct AppSection: View {
     @Bindable var model: AppModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Toggle(isOn: launchBinding) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Launch at login")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(DaybriefTheme.ink)
-                    Text("Daybrief stays in your menu bar so it's ready each morning.")
-                        .font(.system(size: 11))
-                        .foregroundStyle(DaybriefTheme.inkSecondary)
-                }
+        HStack(alignment: .top, spacing: 24) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Launch at login")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(DaybriefTheme.ink)
+                Text("Open Daybrief automatically when you sign in. It stays in your menu bar, ready for your next brief.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(DaybriefTheme.inkSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .toggleStyle(.switch)
-            .tint(DaybriefTheme.accent)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Toggle("Launch at login", isOn: launchBinding)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .tint(.accentColor)
         }
+        .padding(.vertical, 12)
     }
 
     /// Bridges the toggle to `model.launchAtLogin` (read) / `setLaunchAtLogin` (write),
@@ -576,12 +684,13 @@ private struct LabeledRow<Control: View>: View {
     @ViewBuilder let control: Control
 
     var body: some View {
-        HStack {
+        HStack(alignment: .firstTextBaseline, spacing: 16) {
             Text(label)
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(DaybriefTheme.ink)
-            Spacer(minLength: 16)
+                .frame(width: 76, alignment: .leading)
             control
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }

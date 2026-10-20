@@ -66,6 +66,7 @@ struct DaybriefApp: App {
             }
             .onDisappear { NSApplication.shared.setActivationPolicy(.accessory) }
         }
+        .defaultSize(width: 780, height: 520)
         .windowResizability(.contentSize)
         // The widget's daybrief:// deep link is handled in AppDelegate (it opens an
         // interactive brief window); this stops SwiftUI from also auto-surfacing the

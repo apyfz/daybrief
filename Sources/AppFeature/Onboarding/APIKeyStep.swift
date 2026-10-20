@@ -56,7 +56,7 @@ struct APIKeyStep: View {
     private var providerPicker: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Provider")
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(DaybriefTheme.inkSecondary)
             Picker("Provider", selection: $model.selectedProvider) {
                 ForEach(Provider.allCases) { provider in
@@ -109,7 +109,7 @@ struct APIKeyStep: View {
     private var modelPicker: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Model")
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(DaybriefTheme.inkSecondary)
             Picker("Model", selection: $model.selectedModel) {
                 ForEach(models.recommendedFirst(selection: model.selectedModel, showAll: showAllModels)) { info in
