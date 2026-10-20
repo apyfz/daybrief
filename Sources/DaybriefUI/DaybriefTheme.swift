@@ -74,6 +74,16 @@ public enum DaybriefTheme {
         #endif
     }()
 
+    /// Probe the italic separately: a machine may have only the upright face installed.
+    private static let tiemposItalicAvailable: Bool = {
+        registerBundledFonts()
+        #if canImport(AppKit)
+            return NSFont(name: tiemposItalicName, size: 12) != nil
+        #else
+            return false
+        #endif
+    }()
+
     /// Whether the bundled Geist sans is available, computed once after registering
     /// the bundled fonts. Drives ``sansBody(_:)`` / ``sansMedium(_:)`` fallback.
     private static let geistAvailable: Bool = {
@@ -118,7 +128,7 @@ public enum DaybriefTheme {
     /// Use this anywhere the editorial serif is set in italic (the lede, the masthead's
     /// leading "The", the quiet-day line) rather than `serifDisplay(_:).italic()`.
     public static func serifItalic(_ size: CGFloat) -> Font {
-        if tiemposAvailable {
+        if tiemposItalicAvailable {
             return .custom(tiemposItalicName, size: size, relativeTo: .body)
         }
         return .custom("Georgia-Italic", size: size, relativeTo: .body)
