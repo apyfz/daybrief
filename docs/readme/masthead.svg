@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="480" viewBox="0 0 1280 480" role="img" aria-labelledby="title desc">
+  <title id="title">Daybrief — Your morning, in focus.</title>
+  <desc id="desc">A golden editorial masthead on deep green, framed by fine rules. A daily brief for your Mac.</desc>
+  <rect width="1280" height="480" rx="18" fill="#263b35"/>
+  <rect x="24" y="24" width="1232" height="432" rx="5" fill="none" stroke="#f2c200" stroke-opacity=".35"/>
+  <g fill="#e8e5d9" font-family="-apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif" font-size="13" letter-spacing="3">
+    <text x="58" y="65">DAYBRIEF</text>
+    <text x="1222" y="65" text-anchor="end">A DAILY EDITION · FOR YOUR MAC</text>
+  </g>
+  <path d="M58 87H1222M58 395H1222" stroke="#e8e5d9" stroke-opacity=".25"/>
+  <g fill="#f2c200" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif">
+    <text x="640" y="161" font-size="47" font-style="italic">Your</text>
+    <text x="640" y="268" font-size="116" letter-spacing="-5">Morning</text>
+    <text x="640" y="341" font-size="61" font-style="italic">in focus.</text>
+  </g>
+  <g stroke="#f2c200" stroke-width="1.4" fill="none" opacity=".65">
+    <circle cx="213" cy="239" r="24"/><path d="M213 195v12m0 64v12m-44-44h12m64 0h12m-75-31 9 9m44 44 9 9m0-62-9 9m-44 44-9 9"/>
+    <circle cx="1067" cy="239" r="24"/><path d="M1067 195v12m0 64v12m-44-44h12m64 0h12m-75-31 9 9m44 44 9 9m0-62-9 9m-44 44-9 9"/>
+  </g>
+  <text x="640" y="429" fill="#e8e5d9" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="18">A little clarity, before the day begins.</text>
+</svg>

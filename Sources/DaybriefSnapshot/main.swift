@@ -310,7 +310,7 @@ func render() throws {
     // from `AppModel.preview(brief:)`'s same sample brief. A light color scheme matches
     // the warm-paper editorial design.
     _ = AppModel.preview(brief: brief) // exercises the requested preview affordance
-    let view = BriefPanelSnapshotView(brief: brief)
+    let view = BriefPanelSnapshotView(brief: brief, expandedSources: !CommandLine.arguments.contains("--collapsed"))
         .environment(\.colorScheme, .light)
 
     let renderer = ImageRenderer(content: view)

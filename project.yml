@@ -11,7 +11,7 @@ settings:
     SWIFT_VERSION: "6.2"
     SWIFT_STRICT_CONCURRENCY: complete
     MARKETING_VERSION: "0.1.0"
-    CURRENT_PROJECT_VERSION: "1"
+    CURRENT_PROJECT_VERSION: "2"
     # Local dev + distribution both use automatic signing with the builder's own
     # DEVELOPMENT_TEAM, supplied at build time (xcodebuild DEVELOPMENT_TEAM=…) or via
     # an untracked xcconfig — so no team ID is committed. The widget's App Group needs

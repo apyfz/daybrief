@@ -17,10 +17,12 @@ import SwiftUI
 @MainActor
 public struct BriefPanelSnapshotView: View {
     private let brief: Brief
+    private let expandedSources: Bool
 
     /// Creates a snapshot view for `brief`.
-    public init(brief: Brief) {
+    public init(brief: Brief, expandedSources: Bool = true) {
         self.brief = brief
+        self.expandedSources = expandedSources
     }
 
     /// The fixed panel width, matching ``BriefPanelView``'s single-column page.
@@ -29,7 +31,7 @@ public struct BriefPanelSnapshotView: View {
     public var body: some View {
         let vm = BriefRenderer().viewModel(brief)
         let ctaLabels = ctaLabelMap(brief)
-        let editionAccent = vm.accentHex.flatMap(Color.init(hex:)) ?? DaybriefTheme.accent
+        let editionAccent = DaybriefTheme.accent
 
         VStack(spacing: 0) {
             headerBar
@@ -57,7 +59,7 @@ public struct BriefPanelSnapshotView: View {
                                 section: section,
                                 ctaLabels: ctaLabels,
                                 accent: editionAccent,
-                                startsExpanded: true
+                                startsExpanded: expandedSources
                             )
                         }
                     }
