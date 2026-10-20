@@ -113,7 +113,7 @@ public enum DaybriefTheme {
 
     /// An italic serif at `size`, using the real Tiempos Text italic face when bundled
     /// (synthesised obliquing of the upright face reads noticeably worse); otherwise
-    /// falls back to the system serif obliqued via `.italic()`.
+    /// falls back to the system-provided Georgia italic face.
     ///
     /// Use this anywhere the editorial serif is set in italic (the lede, the masthead's
     /// leading "The", the quiet-day line) rather than `serifDisplay(_:).italic()`.
@@ -121,7 +121,7 @@ public enum DaybriefTheme {
         if tiemposAvailable {
             return .custom(tiemposItalicName, size: size, relativeTo: .body)
         }
-        return .system(size: size, design: .serif).italic()
+        return .custom("Georgia-Italic", size: size, relativeTo: .body)
     }
 
     /// The body-copy sans (Geist) at `size`, for the running context paragraphs
